@@ -1,0 +1,355 @@
+schema_version: 1
+
+upstream:
+  url: https://github.com/davatorium/rofi
+  revision: 1ad1df6b72d4c8b0e40e8ced1249ef8a8a6bc0ad
+  manifest: Compatibility/rofi-1ad1df6b/manifest.json
+
+swift_baseline:
+  tasks_complete: [T1, T2, T3, T4, T5]
+  next_task: APPKIT
+  executable: dmenu-dump-only
+  appkit: absent
+
+milestones:
+  T1: Swift package, executable stub, and separator parser
+  T2: row metadata and row ranges
+  T3: tokenizer and matching methods
+  T4: dmenu output format and exit-code mapping
+  T5: scorers and history store
+  CLI: executable configuration and dmenu/script orchestration
+  APPKIT: native panel, view, and input shell
+  MODES: native and semantic mode integrations
+  THEMES: RASI, styling, icons, and thumbnails
+  PLUGINS: explicit extension policy after the native core is stable
+
+items:
+  - id: cli.arguments-and-config
+    class: semantic
+    milestone: CLI
+    risk: critical
+    source_evidence: [source/rofi.c, source/xrmoptions.c, config/config.c, test/helper-config-cmdline-parser.c]
+    swift_evidence: [Package.swift, Sources/RofiCore/Arguments.swift, Sources/RofiCore/DmenuDump.swift, Sources/rofi/main.swift, Tests/RofiCoreTests/ArgumentsTests.swift, Tests/RofiCoreTests/DmenuDumpTests.swift]
+    oracle_need: required
+    spike_need: none
+    status: partial
+    divergence: Rofi-style argument lookup and the dmenu dump options are implemented; configuration, help, and every non-dmenu-dump invocation remain unsupported and exit through the stub path.
+
+  - id: cli.diagnostics-and-exit-contract
+    class: semantic
+    milestone: CLI
+    risk: high
+    source_evidence: [source/rofi.c, source/modes/dmenu.c, doc/rofi.1.markdown, doc/rofi-dmenu.5.markdown]
+    swift_evidence: [Sources/rofi/main.swift, Sources/RofiCore/DmenuDump.swift, Sources/RofiCore/OutputFormat.swift, Tests/RofiCoreTests/DmenuDumpTests.swift, Tests/RofiCoreTests/OutputFormatTests.swift]
+    oracle_need: required
+    spike_need: none
+    status: partial
+    divergence: The dmenu dump path exits 0, including when no rows match; invalid matching methods and input-open failures exit 1. Help, configuration diagnostics, and other mode-specific exits are not implemented.
+
+  - id: mode.state-machine
+    class: semantic
+    milestone: CLI
+    risk: critical
+    source_evidence: [include/mode.h, include/mode-private.h, source/mode.c, source/rofi.c, test/mode-test.c]
+    swift_evidence: []
+    oracle_need: targeted
+    spike_need: targeted
+    status: planned
+    divergence: No mode protocol, transition reducer, reload path, or mode registry exists in Swift.
+
+  - id: matching.methods-and-tokenization
+    class: exact
+    milestone: T3
+    risk: medium
+    source_evidence: [source/helper.c, test/helper-tokenize.c, test/helper-test.c]
+    swift_evidence: [Sources/RofiCore/Matcher.swift, Tests/RofiCoreTests/MatcherTests.swift]
+    oracle_need: none
+    spike_need: none
+    status: complete
+    divergence: Invalid regex fallback and normalization are covered; NSRegularExpression is used instead of GRegex.
+
+  - id: matching.scoring-and-order
+    class: exact
+    milestone: T5
+    risk: high
+    source_evidence: [source/helper.c, include/helper.h, test/helper-test.c]
+    swift_evidence: [Sources/RofiCore/Scorer.swift, Tests/RofiCoreTests/ScorerTests.swift]
+    oracle_need: required
+    spike_need: none
+    status: partial
+    divergence: Levenshtein and the original fzf scorer are implemented over Unicode code points; fzf-v2, its sort key, tie-breaking, and integration into a view ordering pipeline remain absent.
+
+  - id: history.store-and-ranking
+    class: exact
+    milestone: T5
+    risk: high
+    source_evidence: [source/history.c, include/history.h, test/history-test.c]
+    swift_evidence: [Sources/RofiCore/History.swift, Tests/RofiCoreTests/HistoryTests.swift]
+    oracle_need: targeted
+    spike_need: targeted
+    status: complete
+    divergence: Parsing, stable ranking, size capping, persistence, disabled history, and ignored prefixes are implemented for a caller-provided URL; invalid list bytes decode to U+FFFD, write failures are silent, and rofi's ignored-prefix mutation bug is not reproduced.
+
+  - id: dmenu.byte-stream-and-row-metadata
+    class: exact
+    milestone: CLI
+    risk: critical
+    source_evidence: [source/modes/dmenu.c, source/modes/script.c, source/helper.c, doc/rofi-dmenu.5.markdown]
+    swift_evidence: [Sources/RofiCore/Separator.swift, Sources/RofiCore/ForceUTF8.swift, Sources/RofiCore/Row.swift, Sources/RofiCore/RowRange.swift, Sources/RofiCore/RowSplitter.swift, Sources/RofiCore/DmenuDump.swift, Tests/RofiCoreTests/SeparatorTests.swift, Tests/RofiCoreTests/ForceUTF8Tests.swift, Tests/RofiCoreTests/RowTests.swift, Tests/RofiCoreTests/RowRangeTests.swift, Tests/RofiCoreTests/RowSplitterTests.swift, Tests/RofiCoreTests/DmenuDumpTests.swift]
+    oracle_need: required
+    spike_need: targeted
+    status: complete
+    divergence: The landed no-UI path reads raw bytes synchronously like upstream dump mode, repairs each invalid UTF-8 byte, preserves NUL-delimited metadata, supports custom separators, and splits incrementally; asynchronous AppKit ingestion is not wired because no UI exists.
+
+  - id: dmenu.selection-and-multiselect
+    class: semantic
+    milestone: CLI
+    risk: high
+    source_evidence: [source/modes/dmenu.c, include/modes/dmenu.h, source/view.c, doc/rofi-dmenu.5.markdown]
+    swift_evidence: [Sources/RofiCore/Arguments.swift, Sources/RofiCore/DmenuDump.swift, Sources/RofiCore/OutputFormat.swift, Sources/rofi/main.swift, Tests/RofiCoreTests/ArgumentsTests.swift, Tests/RofiCoreTests/DmenuDumpTests.swift, Tests/RofiCoreTests/OutputFormatTests.swift]
+    oracle_need: required
+    spike_need: targeted
+    status: partial
+    divergence: Dump filtering, original-index formatting, the single-row auto-select shortcut, and empty only-match/no-custom behavior are implemented; interactive selection, custom input, select, and multi-select flows remain absent.
+
+  - id: dmenu.output-format
+    class: exact
+    milestone: T4
+    risk: medium
+    source_evidence: [source/helper.c, source/modes/dmenu.c]
+    swift_evidence: [Sources/RofiCore/OutputFormat.swift, Tests/RofiCoreTests/OutputFormatTests.swift]
+    oracle_need: targeted
+    spike_need: none
+    status: complete
+    divergence: Pango span attribute validation is not reproduced; tag validation and text extraction are implemented with XMLParser.
+
+  - id: script.headers-and-row-protocol
+    class: exact
+    milestone: CLI
+    risk: critical
+    source_evidence: [source/modes/script.c, include/modes/script.h, doc/rofi-script.5.markdown, Examples/test_script_mode_delim.sh]
+    swift_evidence: [Sources/RofiCore/Separator.swift, Sources/RofiCore/ForceUTF8.swift, Sources/RofiCore/Row.swift, Sources/RofiCore/RowRange.swift, Sources/RofiCore/RowSplitter.swift, Tests/RofiCoreTests/SeparatorTests.swift, Tests/RofiCoreTests/ForceUTF8Tests.swift, Tests/RofiCoreTests/RowTests.swift, Tests/RofiCoreTests/RowRangeTests.swift, Tests/RofiCoreTests/RowSplitterTests.swift]
+    oracle_need: required
+    spike_need: targeted
+    status: partial
+    divergence: Shared raw-byte delimiters, UTF-8 repair, row metadata, ranges, and incremental splitting exist; script headers, ROFI_DATA, subprocess I/O, hot keys, and reload responses do not.
+
+  - id: script.execution-and-reload
+    class: semantic
+    milestone: MODES
+    risk: critical
+    source_evidence: [source/modes/script.c, source/view.c, include/mode.h, Examples/test_script_mode.sh, Examples/test_script_env.sh]
+    swift_evidence: []
+    oracle_need: required
+    spike_need: required
+    status: planned
+    divergence: No script subprocess lifecycle, environment contract, action dispatch, reload, or selection retention exists.
+
+  - id: modes.run
+    class: semantic
+    milestone: MODES
+    risk: high
+    source_evidence: [source/modes/run.c, include/modes/run.h, source/helper.c]
+    swift_evidence: []
+    oracle_need: targeted
+    spike_need: required
+    status: planned
+    divergence: PATH discovery, executable history, terminal launch, and process execution need macOS-safe equivalents.
+
+  - id: modes.ssh
+    class: semantic
+    milestone: MODES
+    risk: high
+    source_evidence: [source/modes/ssh.c, include/modes/ssh.h, source/history.c]
+    swift_evidence: []
+    oracle_need: targeted
+    spike_need: required
+    status: planned
+    divergence: Host discovery, ssh configuration parsing, history, and terminal launch are absent.
+
+  - id: modes.combi
+    class: semantic
+    milestone: MODES
+    risk: high
+    source_evidence: [source/modes/combi.c, include/modes/combi.h, source/mode.c]
+    swift_evidence: []
+    oracle_need: targeted
+    spike_need: targeted
+    status: planned
+    divergence: No combined-mode namespacing, routing, display formatting, or delegated result handling exists.
+
+  - id: apps.drun
+    class: native
+    milestone: MODES
+    risk: critical
+    source_evidence: [source/modes/drun.c, include/modes/drun.h, config/config.c]
+    swift_evidence: []
+    oracle_need: targeted
+    spike_need: required
+    status: planned
+    divergence: Linux desktop entries and launch contexts must map to native application discovery and NSWorkspace semantics.
+
+  - id: files.file-browser
+    class: semantic
+    milestone: MODES
+    risk: high
+    source_evidence: [source/modes/filebrowser.c, include/modes/filebrowser.h, Examples/rofi-file-browser.sh]
+    swift_evidence: []
+    oracle_need: targeted
+    spike_need: required
+    status: planned
+    divergence: Directory listing, hidden-file behavior, completion, opening, and sandbox-aware access are absent.
+
+  - id: files.recursive-browser
+    class: semantic
+    milestone: MODES
+    risk: high
+    source_evidence: [source/modes/recursivebrowser.c, include/modes/recursivebrowser.h]
+    swift_evidence: []
+    oracle_need: targeted
+    spike_need: required
+    status: planned
+    divergence: Recursive enumeration, cancellation, incremental reload, and large-tree policy are absent.
+
+  - id: windows.selection-and-activation
+    class: native
+    milestone: MODES
+    risk: critical
+    source_evidence: [source/modes/window.c, source/modes/wayland-window.c, include/modes/window.h, include/modes/wayland-window.h]
+    swift_evidence: []
+    oracle_need: targeted
+    spike_need: required
+    status: planned
+    divergence: X11 and Wayland window metadata/actions require a permission-aware Accessibility and NSWorkspace design.
+
+  - id: themes.rasi-parser-and-cascade
+    class: semantic
+    milestone: THEMES
+    risk: critical
+    source_evidence: [lexer/theme-lexer.l, lexer/theme-parser.y, source/theme.c, test/theme-parser-test.c, doc/rofi-theme.5.markdown]
+    swift_evidence: []
+    oracle_need: required
+    spike_need: targeted
+    status: planned
+    divergence: No RASI parser, imports, variables, media conditions, selector cascade, or diagnostics exist.
+
+  - id: themes.native-rendering
+    class: native
+    milestone: THEMES
+    risk: high
+    source_evidence: [source/theme.c, source/css-colors.c, doc/default_theme.rasi, themes/dmenu.rasi]
+    swift_evidence: []
+    oracle_need: targeted
+    spike_need: required
+    status: planned
+    divergence: Cairo/Pango rendering properties need documented AppKit mappings and explicit unsupported-property behavior.
+
+  - id: view.widgets-navigation-and-filtering
+    class: native
+    milestone: APPKIT
+    risk: critical
+    source_evidence: [source/view.c, source/widgets/widget.c, source/widgets/box.c, source/widgets/listview.c, source/widgets/textbox.c, test/widget-test.c, test/box-test.c, test/textbox-test.c]
+    swift_evidence: []
+    oracle_need: required
+    spike_need: required
+    status: next
+    divergence: No AppKit view exists; the next feature is an NSPanel search field and list wired to the landed row, matching, scoring, and formatting pipeline. Virtualization, navigation, and accessibility remain unimplemented.
+
+  - id: display.panel-placement-and-focus
+    class: native
+    milestone: APPKIT
+    risk: critical
+    source_evidence: [source/display.c, source/xcb/display.c, source/wayland/display.c, source/xcb/view.c, source/wayland/view.c]
+    swift_evidence: []
+    oracle_need: targeted
+    spike_need: required
+    status: next
+    divergence: The next feature introduces the first NSPanel for search and list display; screen selection, placement policy, focus behavior, activation policy, and multi-display behavior remain unimplemented.
+
+  - id: display.x11-and-wayland-backends
+    class: unsupported
+    milestone: APPKIT
+    risk: low
+    source_evidence: [source/xcb/display.c, source/xcb/view.c, source/wayland/display.c, source/wayland/view.c]
+    swift_evidence: []
+    oracle_need: none
+    spike_need: none
+    status: unsupported
+    divergence: Direct X11 and Wayland protocol compatibility is outside a native macOS application; only user-visible panel semantics are targeted.
+
+  - id: input.keyboard-actions
+    class: native
+    milestone: APPKIT
+    risk: critical
+    source_evidence: [source/keyb.c, include/input-codes.h, source/view.c, doc/rofi-keys.5.markdown, doc/rofi-actions.5.markdown]
+    swift_evidence: []
+    oracle_need: required
+    spike_need: required
+    status: planned
+    divergence: No action map, keybinding parser, responder-chain integration, custom keys, or keyboard-layout policy exists.
+
+  - id: input.pointer-actions
+    class: native
+    milestone: APPKIT
+    risk: high
+    source_evidence: [source/keyb.c, source/view.c, source/widgets/listview.c, include/input-codes.h]
+    swift_evidence: []
+    oracle_need: targeted
+    spike_need: required
+    status: planned
+    divergence: Click, double-click, scroll, hover, and pointer action dispatch are absent.
+
+  - id: input.clipboard-and-ime
+    class: native
+    milestone: APPKIT
+    risk: critical
+    source_evidence: [source/display.c, source/view.c, source/widgets/textbox.c, source/keyb.c]
+    swift_evidence: []
+    oracle_need: targeted
+    spike_need: required
+    status: planned
+    divergence: NSPasteboard integration, selection semantics, marked text, composition, and Unicode input need native contracts.
+
+  - id: media.icons
+    class: native
+    milestone: THEMES
+    risk: high
+    source_evidence: [source/rofi-icon-fetcher.c, source/widgets/icon.c, include/rofi-icon-fetcher.h, config/config.c]
+    swift_evidence: []
+    oracle_need: targeted
+    spike_need: required
+    status: planned
+    divergence: XDG icon themes and Cairo surfaces need NSImage, application-icon, file-icon, cache, and fallback mappings.
+
+  - id: media.thumbnails
+    class: native
+    milestone: THEMES
+    risk: high
+    source_evidence: [source/rofi-icon-fetcher.c, doc/rofi-thumbnails.5.markdown]
+    swift_evidence: []
+    oracle_need: targeted
+    spike_need: required
+    status: planned
+    divergence: freedesktop thumbnailers and cache paths need a safe Quick Look or native thumbnail pipeline.
+
+  - id: lifecycle.process-view-and-mode
+    class: semantic
+    milestone: CLI
+    risk: critical
+    source_evidence: [source/rofi.c, source/view.c, source/display.c, include/view.h, include/display.h]
+    swift_evidence: [Sources/RofiCore/Arguments.swift, Sources/RofiCore/DmenuDump.swift, Sources/rofi/main.swift, Tests/RofiCoreTests/ArgumentsTests.swift, Tests/RofiCoreTests/DmenuDumpTests.swift]
+    oracle_need: required
+    spike_need: required
+    status: partial
+    divergence: The dmenu dump process path reads stdin or a named input file, writes matches, reports option and open failures, and exits deterministically; cancellation, reload, child cleanup, view finalization, and signal handling do not exist.
+
+  - id: plugins.native-c-mode-abi
+    class: deferred
+    milestone: PLUGINS
+    risk: critical
+    source_evidence: [include/mode.h, include/mode-private.h, source/mode.c, source/rofi.c]
+    swift_evidence: []
+    oracle_need: none
+    spike_need: required
+    status: deferred
+    divergence: ABI version 7 exposes GLib, GModule, and Cairo-shaped contracts; preserving it would import the non-native stack or require a hazardous shim.
