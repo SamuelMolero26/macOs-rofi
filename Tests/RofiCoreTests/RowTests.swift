@@ -43,4 +43,17 @@ import RofiCore
         #expect(Row(parsing: "x\0icon\u{1F}a,,b").icons == ["a", "", "b"])
         #expect(Row(parsing: "x\0icon\u{1F}").icons.isEmpty)
     }
+
+    // read_add passes only the bytes before the NUL to rofi_force_utf8
+    // (source/modes/dmenu.c:181-190).
+    @Test func bytesRepairInvalidUTF8InTheTextOnly() {
+        let row = Row(parsing: [0x61, 0xFF, 0x00] + Array("icon\u{1F}term".utf8))
+        #expect(row.text == "a\u{FFFD}")
+        #expect(row.icons == ["term"])
+    }
+
+    @Test func bytesWithALeadingNulHaveEmptyText() {
+        #expect(Row(parsing: [0x00] as [UInt8]).text == "")
+        #expect(Row(parsing: [UInt8]()).text == "")
+    }
 }
