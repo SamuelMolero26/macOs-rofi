@@ -1,4 +1,5 @@
 import Foundation
+import RofiAppKit
 import RofiCore
 
 func fail(_ message: String) -> Never {
@@ -6,14 +7,21 @@ func fail(_ message: String) -> Never {
     exit(1)
 }
 
+func finish(_ completion: DmenuCompletion) -> Never {
+    if let output = completion.output {
+        FileHandle.standardOutput.write(Data(output.utf8))
+    }
+    exit(completion.outcome.exitCode)
+}
+
 let args = Arguments(CommandLine.arguments)
 
-// The UI, script mode and the rest of the CLI arrive in later features.
-guard args.has("-dmenu"), args.has("-dump") else { fail("not implemented yet") }
+// Script mode and the rest of the CLI arrive in later features.
+guard args.has("-dmenu") else { fail("not implemented yet") }
 
-let dump: DmenuPipeline
+let pipeline: DmenuPipeline
 do {
-    dump = try DmenuPipeline(arguments: args)
+    pipeline = try DmenuPipeline(arguments: args)
 } catch {
     fail("\(error)")
 }
@@ -26,6 +34,15 @@ if let path = args.string("-input") {
     if input == -1 { fail("Failed to open file: \(path): \(String(cString: strerror(errno)))") }
 }
 
-let rows = readRows(fileDescriptor: input, separator: dump.separator)
-FileHandle.standardOutput.write(Data(dump.dump(rows: rows).joined().utf8))
-exit(0)
+let rows = readRows(fileDescriptor: input, separator: pipeline.separator)
+if args.has("-dump") {
+    FileHandle.standardOutput.write(Data(pipeline.dump(rows: rows).joined().utf8))
+    exit(0)
+}
+
+switch pipeline.start(rows: rows) {
+case .completed(let completion):
+    finish(completion)
+case .session(let session):
+    finish(runDmenuPanel(session: session))
+}

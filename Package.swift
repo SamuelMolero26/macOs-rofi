@@ -10,7 +10,8 @@ let package = Package(
     ],
     targets: [
         .target(name: "RofiCore"),
-        .executableTarget(name: "rofi", dependencies: ["RofiCore"]),
+        .target(name: "RofiAppKit", dependencies: ["RofiCore"]),
+        .executableTarget(name: "rofi", dependencies: ["RofiCore", "RofiAppKit"]),
         .testTarget(name: "RofiCoreTests", dependencies: ["RofiCore"]),
     ]
 )
