@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "upstream": {
+    "url": "https://github.com/davatorium/rofi",
+    "revision": "1ad1df6b72d4c8b0e40e8ced1249ef8a8a6bc0ad",
+    "shortRevision": "1ad1df6b",
+    "revisionType": "git-commit"
+  },
+  "evidencePolicy": {
+    "authorityOrder": [
+      "upstream-source",
+      "upstream-test",
+      "oracle",
+      "native-spike",
+      "swift-contract"
+    ],
+    "rules": [
+      "Read upstream tests and source at the exact pinned revision.",
+      "Use a focused non-interactive oracle only when source and tests are ambiguous.",
+      "Use a native spike only to resolve macOS platform uncertainty.",
+      "Record accepted divergence in Compatibility/matrix.yaml.",
+      "Do not treat an uncited snapshot as compatibility evidence."
+    ]
+  },
+  "generationPolicy": {
+    "refresh": "manual-reviewed-only",
+    "allowInPlaceRevisionChange": false,
+    "revisionBumpAction": "create-a-new-rofi-short-revision-directory",
+    "interactiveOracleAllowed": false,
+    "networkRequired": false,
+    "requireSourcePathVerification": true,
+    "requireFixtureDiffReview": true,
+    "omitGenerationTimestamp": true
+  },
+  "fixtureEncoding": {
+    "container": "json",
+    "textEncoding": "utf-8",
+    "newline": "lf",
+    "arbitraryBytes": "rfc4648-base64-padded",
+    "integers": "base-10",
+    "paths": "upstream-relative-posix",
+    "objectKeys": "lexicographic",
+    "arrayOrder": "observed-or-explicit",
+    "locale": "omitted",
+    "timezone": "omitted",
+    "timestamps": "omitted",
+    "homeDirectory": "omitted",
+    "hostPaths": "omitted"
+  },
+  "sourceAreas": {
+    "cliAndConfig": ["source/rofi.c", "source/xrmoptions.c", "config/config.c"],
+    "coreContracts": ["source/helper.c", "source/history.c", "source/mode.c"],
+    "modes": ["source/modes"],
+    "themesAndWidgets": ["lexer", "source/theme.c", "source/widgets"],
+    "display": ["source/display.c", "source/xcb", "source/wayland"],
+    "input": ["source/keyb.c", "include/input-codes.h"],
+    "media": ["source/rofi-icon-fetcher.c", "include/rofi-icon-fetcher.h"],
+    "publicContracts": ["include"]
+  },
+  "testAreas": {
+    "cliAndConfig": ["test/helper-config-cmdline-parser.c"],
+    "matchingAndHelpers": ["test/helper-test.c", "test/helper-tokenize.c"],
+    "history": ["test/history-test.c"],
+    "mode": ["test/mode-test.c"],
+    "themes": ["test/theme-parser-test.c"],
+    "widgets": ["test/widget-test.c", "test/box-test.c", "test/scrollbar-test.c", "test/textbox-test.c"],
+    "scriptExamples": ["Examples/test_script_mode.sh", "Examples/test_script_mode_delim.sh", "Examples/test_script_env.sh"]
+  }
+}
