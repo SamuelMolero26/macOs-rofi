@@ -5,7 +5,8 @@ import RofiCore
 /// Runs one synchronous dmenu interaction on the main actor.
 @MainActor public func runDmenuPanel(session: DmenuSession) -> DmenuCompletion {
     let application = NSApplication.shared
-    application.setActivationPolicy(.accessory)
+    // Regular policy reliably registers this unbundled CLI for activation.
+    application.setActivationPolicy(.regular)
 
     let controller = DmenuPanelController(session: session)
     let applicationDelegate = DmenuApplicationDelegate(controller: controller)
@@ -30,11 +31,15 @@ import RofiCore
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         controller.present()
-        // Activation is asynchronous for this unbundled CLI launcher; retry once next turn.
         NSApplication.shared.activate(ignoringOtherApps: true)
         DispatchQueue.main.async { @MainActor [controller] in
+            // Return to accessory mode to avoid persistent Dock and menu presence.
+            NSApplication.shared.setActivationPolicy(.accessory)
             NSApplication.shared.activate(ignoringOtherApps: true)
-            controller.focus()
+            DispatchQueue.main.async { @MainActor [controller] in
+                NSApplication.shared.activate(ignoringOtherApps: true)
+                controller.focus()
+            }
         }
     }
 }
