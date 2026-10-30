@@ -28,12 +28,13 @@ import RofiCore
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        controller.present()
         if #available(macOS 14.0, *) {
             NSApplication.shared.activate()
         } else {
             NSApplication.shared.activate(ignoringOtherApps: true)
         }
-        controller.present()
+        controller.focus()
     }
 }
 
@@ -75,6 +76,10 @@ import RofiCore
 
     func present() {
         panel.center()
+        panel.orderFrontRegardless()
+    }
+
+    func focus() {
         panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(searchField)
     }
@@ -82,6 +87,7 @@ import RofiCore
     private func configurePanel() {
         panel.delegate = self
         panel.isFloatingPanel = true
+        panel.hidesOnDeactivate = false
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.hasShadow = true
