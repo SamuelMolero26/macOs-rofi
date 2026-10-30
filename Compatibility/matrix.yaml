@@ -7,9 +7,9 @@ upstream:
 
 swift_baseline:
   tasks_complete: [T1, T2, T3, T4, T5]
-  next_task: APPKIT
-  executable: dmenu-dump-only
-  appkit: absent
+  next_task: CLI
+  executable: dmenu-only
+  appkit: basic-panel
 
 milestones:
   T1: Swift package, executable stub, and separator parser
@@ -29,22 +29,22 @@ items:
     milestone: CLI
     risk: critical
     source_evidence: [source/rofi.c, source/xrmoptions.c, config/config.c, test/helper-config-cmdline-parser.c]
-    swift_evidence: [Package.swift, Sources/RofiCore/Arguments.swift, Sources/RofiCore/DmenuDump.swift, Sources/rofi/main.swift, Tests/RofiCoreTests/ArgumentsTests.swift, Tests/RofiCoreTests/DmenuDumpTests.swift]
+    swift_evidence: [Package.swift, Sources/RofiCore/Arguments.swift, Sources/RofiCore/DmenuPipeline.swift, Sources/rofi/main.swift, Tests/RofiCoreTests/ArgumentsTests.swift, Tests/RofiCoreTests/DmenuDumpTests.swift]
     oracle_need: required
     spike_need: none
     status: partial
-    divergence: Rofi-style argument lookup and the dmenu dump options are implemented; configuration, help, and every non-dmenu-dump invocation remain unsupported and exit through the stub path.
+    divergence: Rofi-style argument lookup exists, and of the dmenu.c flags only -dump, -format, -i, -input, -no-custom, -only-match, and -sep are read. Arguments come from CommandLine.arguments, so invalid UTF-8 option bytes such as -sep $'\xff' become U+FFFD and fall back to the newline separator. Running the binary as dmenu is not recognized. Configuration, help, and every non-dmenu invocation exit through the stub path.
 
   - id: cli.diagnostics-and-exit-contract
     class: semantic
     milestone: CLI
     risk: high
     source_evidence: [source/rofi.c, source/modes/dmenu.c, doc/rofi.1.markdown, doc/rofi-dmenu.5.markdown]
-    swift_evidence: [Sources/rofi/main.swift, Sources/RofiCore/DmenuDump.swift, Sources/RofiCore/OutputFormat.swift, Tests/RofiCoreTests/DmenuDumpTests.swift, Tests/RofiCoreTests/OutputFormatTests.swift]
+    swift_evidence: [Sources/rofi/main.swift, Sources/RofiCore/DmenuPipeline.swift, Sources/RofiCore/DmenuSession.swift, Sources/RofiCore/OutputFormat.swift, Tests/RofiCoreTests/DmenuDumpTests.swift, Tests/RofiCoreTests/DmenuSessionTests.swift, Tests/RofiCoreTests/OutputFormatTests.swift]
     oracle_need: required
     spike_need: none
     status: partial
-    divergence: The dmenu dump path exits 0, including when no rows match; invalid matching methods and input-open failures exit 1. Help, configuration diagnostics, and other mode-specific exits are not implemented.
+    divergence: The dmenu dump path exits 0, including when no rows match; interactive accept exits 0 and cancel exits 1 through the shared outcome mapping. Invalid matching methods and input-open failures exit 1, while upstream exits 65 for an invalid matching method when a display exists; that divergence is undecided. Help, configuration diagnostics, and other mode-specific exits are not implemented.
 
   - id: mode.state-machine
     class: semantic
@@ -62,11 +62,11 @@ items:
     milestone: T3
     risk: medium
     source_evidence: [source/helper.c, test/helper-tokenize.c, test/helper-test.c]
-    swift_evidence: [Sources/RofiCore/Matcher.swift, Tests/RofiCoreTests/MatcherTests.swift]
+    swift_evidence: [Sources/RofiCore/Matcher.swift, Sources/RofiCore/DmenuPipeline.swift, Tests/RofiCoreTests/MatcherTests.swift]
     oracle_need: none
     spike_need: none
-    status: complete
-    divergence: Invalid regex fallback and normalization are covered; NSRegularExpression is used instead of GRegex.
+    status: partial
+    divergence: Invalid regex fallback and normalization are covered; NSRegularExpression is used instead of GRegex. The negate character is compared as the token's first grapheme, while upstream compares and skips its first raw byte. Five or more -matching names are accepted, while upstream errors.
 
   - id: matching.scoring-and-order
     class: exact
@@ -88,29 +88,29 @@ items:
     oracle_need: targeted
     spike_need: targeted
     status: complete
-    divergence: Parsing, stable ranking, size capping, persistence, disabled history, and ignored prefixes are implemented for a caller-provided URL; invalid list bytes decode to U+FFFD, write failures are silent, and rofi's ignored-prefix mutation bug is not reproduced.
+    divergence: Parsing, stable ranking, size capping, persistence, disabled history, and ignored prefixes are implemented for a caller-provided URL; invalid list bytes decode to U+FFFD, write failures are silent, and rofi's ignored-prefix mutation bug is not reproduced. No mode calls the store yet.
 
   - id: dmenu.byte-stream-and-row-metadata
     class: exact
     milestone: CLI
     risk: critical
     source_evidence: [source/modes/dmenu.c, source/modes/script.c, source/helper.c, doc/rofi-dmenu.5.markdown]
-    swift_evidence: [Sources/RofiCore/Separator.swift, Sources/RofiCore/ForceUTF8.swift, Sources/RofiCore/Row.swift, Sources/RofiCore/RowRange.swift, Sources/RofiCore/RowSplitter.swift, Sources/RofiCore/DmenuDump.swift, Tests/RofiCoreTests/SeparatorTests.swift, Tests/RofiCoreTests/ForceUTF8Tests.swift, Tests/RofiCoreTests/RowTests.swift, Tests/RofiCoreTests/RowRangeTests.swift, Tests/RofiCoreTests/RowSplitterTests.swift, Tests/RofiCoreTests/DmenuDumpTests.swift]
+    swift_evidence: [Sources/RofiCore/Separator.swift, Sources/RofiCore/ForceUTF8.swift, Sources/RofiCore/Row.swift, Sources/RofiCore/RowRange.swift, Sources/RofiCore/RowSplitter.swift, Sources/RofiCore/DmenuPipeline.swift, Tests/RofiCoreTests/SeparatorTests.swift, Tests/RofiCoreTests/ForceUTF8Tests.swift, Tests/RofiCoreTests/RowTests.swift, Tests/RofiCoreTests/RowRangeTests.swift, Tests/RofiCoreTests/RowSplitterTests.swift, Tests/RofiCoreTests/DmenuDumpTests.swift]
     oracle_need: required
     spike_need: targeted
-    status: complete
-    divergence: The landed no-UI path reads raw bytes synchronously like upstream dump mode, repairs each invalid UTF-8 byte, preserves NUL-delimited metadata, supports custom separators, and splits incrementally; asynchronous AppKit ingestion is not wired because no UI exists.
+    status: partial
+    divergence: Input is read as raw bytes, each invalid UTF-8 byte is repaired, NUL-delimited metadata is preserved, custom separators work, and rows split incrementally. Every path reads to EOF before continuing, so the panel opens only after input ends, unlike upstream's asynchronous ingestion. Row extras decode invalid UTF-8 to U+FFFD instead of keeping raw bytes, and strtol edge cases in \xHH separators and row ranges are simplified.
 
   - id: dmenu.selection-and-multiselect
     class: semantic
     milestone: CLI
     risk: high
     source_evidence: [source/modes/dmenu.c, include/modes/dmenu.h, source/view.c, doc/rofi-dmenu.5.markdown]
-    swift_evidence: [Sources/RofiCore/Arguments.swift, Sources/RofiCore/DmenuDump.swift, Sources/RofiCore/OutputFormat.swift, Sources/rofi/main.swift, Tests/RofiCoreTests/ArgumentsTests.swift, Tests/RofiCoreTests/DmenuDumpTests.swift, Tests/RofiCoreTests/OutputFormatTests.swift]
+    swift_evidence: [Sources/RofiCore/Arguments.swift, Sources/RofiCore/DmenuPipeline.swift, Sources/RofiCore/DmenuSession.swift, Sources/RofiCore/OutputFormat.swift, Sources/RofiAppKit/DmenuPanel.swift, Sources/rofi/main.swift, Tests/RofiCoreTests/ArgumentsTests.swift, Tests/RofiCoreTests/DmenuDumpTests.swift, Tests/RofiCoreTests/DmenuPipelineTests.swift, Tests/RofiCoreTests/DmenuSessionTests.swift, Tests/RofiCoreTests/OutputFormatTests.swift]
     oracle_need: required
     spike_need: targeted
     status: partial
-    divergence: Dump filtering, original-index formatting, the single-row auto-select shortcut, and empty only-match/no-custom behavior are implemented; interactive selection, custom input, select, and multi-select flows remain absent.
+    divergence: Dump filtering, original-index formatting, auto-select, interactive single selection, custom input, non-selectable rows, and only-match/no-custom policy are implemented. The -select, -selected-row, -multi-select, -a, and -u flows remain absent, and parsed row ranges have no production caller.
 
   - id: dmenu.output-format
     class: exact
@@ -120,8 +120,8 @@ items:
     swift_evidence: [Sources/RofiCore/OutputFormat.swift, Tests/RofiCoreTests/OutputFormatTests.swift]
     oracle_need: targeted
     spike_need: none
-    status: complete
-    divergence: Pango span attribute validation is not reproduced; tag validation and text extraction are implemented with XMLParser.
+    status: partial
+    divergence: Pango span attribute validation is not reproduced; tag validation and text extraction are implemented with XMLParser. The 2026-10-29 spike found -format p diverging on 21 of 87 vectors.
 
   - id: script.headers-and-row-protocol
     class: exact
@@ -249,22 +249,22 @@ items:
     milestone: APPKIT
     risk: critical
     source_evidence: [source/view.c, source/widgets/widget.c, source/widgets/box.c, source/widgets/listview.c, source/widgets/textbox.c, test/widget-test.c, test/box-test.c, test/textbox-test.c]
-    swift_evidence: []
+    swift_evidence: [Sources/RofiAppKit/DmenuPanel.swift, Sources/RofiCore/DmenuSession.swift, Tests/RofiCoreTests/DmenuSessionTests.swift]
     oracle_need: required
     spike_need: required
-    status: next
-    divergence: No AppKit view exists; the next feature is an NSPanel search field and list wired to the landed row, matching, scoring, and formatting pipeline. Virtualization, navigation, and accessibility remain unimplemented.
+    status: partial
+    divergence: A search field and recycled-cell NSTableView render row text and mirror DmenuSession selection, with accessibility labels on the panel, field, and table. Results keep input order, so scoring is not wired. Prompt, message, line count, display strings, icons, urgent and active styling, columns, ballots, markup, and password entry are absent. The AppKit target has no automated tests; manual smoke is pending in the panel PR.
 
   - id: display.panel-placement-and-focus
     class: native
     milestone: APPKIT
     risk: critical
     source_evidence: [source/display.c, source/xcb/display.c, source/wayland/display.c, source/xcb/view.c, source/wayland/view.c]
-    swift_evidence: []
+    swift_evidence: [Sources/RofiAppKit/DmenuPanel.swift]
     oracle_need: targeted
     spike_need: required
-    status: next
-    divergence: The next feature introduces the first NSPanel for search and list display; screen selection, placement policy, focus behavior, activation policy, and multi-display behavior remain unimplemented.
+    status: partial
+    divergence: An accessory app shows one borderless floating NSPanel, centered at a fixed 640x420, across all Spaces and full-screen spaces, and it stays visible when inactive. Activation is forced and focus retried once on the next run-loop turn for the unbundled CLI. Screen selection, location, width, and multi-display policy are absent, and focus awaits manual smoke.
 
   - id: display.x11-and-wayland-backends
     class: unsupported
@@ -282,11 +282,11 @@ items:
     milestone: APPKIT
     risk: critical
     source_evidence: [source/keyb.c, include/input-codes.h, source/view.c, doc/rofi-keys.5.markdown, doc/rofi-actions.5.markdown]
-    swift_evidence: []
+    swift_evidence: [Sources/RofiAppKit/DmenuPanel.swift, Sources/RofiCore/DmenuSession.swift, Tests/RofiCoreTests/DmenuSessionTests.swift]
     oracle_need: required
     spike_need: required
-    status: planned
-    divergence: No action map, keybinding parser, responder-chain integration, custom keys, or keyboard-layout policy exists.
+    status: partial
+    divergence: Return, Escape, Up, and Down are handled in the search field and ignored while text is marked. No action map, keybinding parser, Tab, paging, custom keys, or keyboard-layout policy exists.
 
   - id: input.pointer-actions
     class: native
@@ -297,18 +297,18 @@ items:
     oracle_need: targeted
     spike_need: required
     status: planned
-    divergence: Click, double-click, scroll, hover, and pointer action dispatch are absent.
+    divergence: The table inherits NSTableView click selection and scrolling, unverified at runtime. Double-click accept, hover, and pointer action dispatch are absent.
 
   - id: input.clipboard-and-ime
     class: native
     milestone: APPKIT
     risk: critical
     source_evidence: [source/display.c, source/view.c, source/widgets/textbox.c, source/keyb.c]
-    swift_evidence: []
+    swift_evidence: [Sources/RofiAppKit/DmenuPanel.swift]
     oracle_need: targeted
     spike_need: required
-    status: planned
-    divergence: NSPasteboard integration, selection semantics, marked text, composition, and Unicode input need native contracts.
+    status: partial
+    divergence: Query updates and key commands wait while the search field has marked text, but IME composition awaits manual smoke. Clipboard behavior is whatever the native field provides; rofi's selection semantics have no contract yet.
 
   - id: media.icons
     class: native
@@ -337,11 +337,11 @@ items:
     milestone: CLI
     risk: critical
     source_evidence: [source/rofi.c, source/view.c, source/display.c, include/view.h, include/display.h]
-    swift_evidence: [Sources/RofiCore/Arguments.swift, Sources/RofiCore/DmenuDump.swift, Sources/rofi/main.swift, Tests/RofiCoreTests/ArgumentsTests.swift, Tests/RofiCoreTests/DmenuDumpTests.swift]
+    swift_evidence: [Sources/RofiCore/Arguments.swift, Sources/RofiCore/DmenuPipeline.swift, Sources/RofiCore/DmenuSession.swift, Sources/RofiAppKit/DmenuPanel.swift, Sources/rofi/main.swift, Tests/RofiCoreTests/ArgumentsTests.swift, Tests/RofiCoreTests/DmenuDumpTests.swift, Tests/RofiCoreTests/DmenuSessionTests.swift]
     oracle_need: required
     spike_need: required
     status: partial
-    divergence: The dmenu dump process path reads stdin or a named input file, writes matches, reports option and open failures, and exits deterministically; cancellation, reload, child cleanup, view finalization, and signal handling do not exist.
+    divergence: The dmenu process reads stdin or a named input file, writes output, reports option and open failures, and exits deterministically. The panel finishes through accept, cancel, or window close, and -only-match keeps it open on cancel. Reload, child cleanup, signal handling, and a shared mode lifecycle do not exist.
 
   - id: plugins.native-c-mode-abi
     class: deferred
