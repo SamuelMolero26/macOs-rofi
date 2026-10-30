@@ -14,15 +14,28 @@ public struct InvalidMatchingMethod: Error, Equatable, CustomStringConvertible {
     }
 }
 
-/// rofi's no-UI dmenu path, `rofi -dmenu -dump` (source/modes/dmenu.c:989-1034).
-public struct DmenuDump: Sendable {
+/// One visible dmenu match and its position in the original input.
+public struct DmenuMatch: Equatable, Sendable {
+    public let sourceIndex: Int
+    public let row: Row
+
+    public init(sourceIndex: Int, row: Row) {
+        self.sourceIndex = sourceIndex
+        self.row = row
+    }
+}
+
+/// Shared dmenu configuration, matching and output projection.
+public struct DmenuPipeline: Sendable {
     public var format = "s"
     public var separator: UInt8 = 0x0A
     public var filter: String?
     public var match = MatchOptions()
     public var autoSelect = false
-    /// `-only-match` or `-no-custom`.
+    /// Disables custom input and keeps the session open on cancellation.
     public var onlyMatch = false
+    /// Disables custom input but preserves normal cancellation.
+    public var noCustom = false
 
     /// Reads the options from the command line (source/modes/dmenu.c:550-560,
     /// 605-608 and the config options in source/xrmoptions.c).
@@ -45,23 +58,43 @@ public struct DmenuDump: Sendable {
         // `-case-sensitive` said (source/modes/dmenu.c:605-608).
         match.caseSensitive = !args.has("-i")
         autoSelect = args.bool("auto-select", default: autoSelect)
-        onlyMatch = args.has("-only-match") || args.has("-no-custom")
+        onlyMatch = args.has("-only-match")
+        noCustom = args.has("-no-custom")
     }
 
-    /// The output for `rows`, one `formatOutputLine` result (each ending in
-    /// a newline) per printed row.
-    public func dump(rows: [Row]) -> [String] {
-        // `-only-match` with no rows prints nothing (dmenu.c:992-997); the
-        // dump below already does, so no separate check is needed.
-        if autoSelect && rows.count == 1 {
-            return [formatOutputLine(format, entry: rows[0].text, index: 0, filter: filter)]
+    /// Matches row text while retaining each row's original input position.
+    public func matchingRows(in rows: [Row], query: String) -> [DmenuMatch] {
+        let matcher = Matcher(query: query, options: match)
+        return rows.enumerated().compactMap { sourceIndex, row in
+            matcher.matches(row.text) ? DmenuMatch(sourceIndex: sourceIndex, row: row) : nil
         }
-        let matcher = Matcher(query: filter ?? "", options: match)
-        return rows.indices
-            .filter { matcher.matches(rows[$0].text) }
-            .map { formatOutputLine(format, entry: rows[$0].text, index: $0, filter: filter) }
     }
+
+    /// Formats a match with its original input index and the supplied live
+    /// filter. A nil filter is distinct from an interactive empty filter.
+    public func formattedOutput(for match: DmenuMatch, filter: String?) -> String {
+        formatOutputLine(
+            format,
+            entry: match.row.text,
+            index: match.sourceIndex,
+            filter: filter
+        )
+    }
+
+    /// The no-UI `rofi -dmenu -dump` projection, one output line per match
+    /// (source/modes/dmenu.c:989-1034).
+    public func dump(rows: [Row]) -> [String] {
+        if autoSelect && rows.count == 1 {
+            return [formattedOutput(for: DmenuMatch(sourceIndex: 0, row: rows[0]), filter: filter)]
+        }
+        return matchingRows(in: rows, query: filter ?? "")
+            .map { formattedOutput(for: $0, filter: filter) }
+    }
+
 }
+
+/// Source compatibility for the first no-UI dmenu implementation.
+public typealias DmenuDump = DmenuPipeline
 
 /// `config.matching`: every comma-separated name must be valid (ASCII case
 /// ignored); the first one is used (source/helper.c:695-731). `""` splits

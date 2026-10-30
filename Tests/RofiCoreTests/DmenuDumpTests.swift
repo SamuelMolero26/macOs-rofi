@@ -43,9 +43,14 @@ import RofiCore
         #expect(options.autoSelect)
     }
 
-    @Test(arguments: ["-only-match", "-no-custom"])
-    func onlyMatchHasTwoSpellings(flag: String) throws {
-        #expect(try dump([flag]).onlyMatch)
+    @Test func onlyMatchAndNoCustomRemainDistinct() throws {
+        let onlyMatch = try dump(["-only-match"])
+        #expect(onlyMatch.onlyMatch)
+        #expect(!onlyMatch.noCustom)
+
+        let noCustom = try dump(["-no-custom"])
+        #expect(!noCustom.onlyMatch)
+        #expect(noCustom.noCustom)
     }
 
     @Test func dashIOverridesCaseSensitive() throws {

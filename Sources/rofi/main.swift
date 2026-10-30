@@ -11,9 +11,9 @@ let args = Arguments(CommandLine.arguments)
 // The UI, script mode and the rest of the CLI arrive in later features.
 guard args.has("-dmenu"), args.has("-dump") else { fail("not implemented yet") }
 
-let dump: DmenuDump
+let dump: DmenuPipeline
 do {
-    dump = try DmenuDump(arguments: args)
+    dump = try DmenuPipeline(arguments: args)
 } catch {
     fail("\(error)")
 }
