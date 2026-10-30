@@ -1,4 +1,5 @@
 import AppKit
+import Dispatch
 import RofiCore
 
 /// Runs one synchronous dmenu interaction on the main actor.
@@ -29,12 +30,12 @@ import RofiCore
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         controller.present()
-        if #available(macOS 14.0, *) {
-            NSApplication.shared.activate()
-        } else {
+        // Activation is asynchronous for this unbundled CLI launcher; retry once next turn.
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        DispatchQueue.main.async { @MainActor [controller] in
             NSApplication.shared.activate(ignoringOtherApps: true)
+            controller.focus()
         }
-        controller.focus()
     }
 }
 
