@@ -4,10 +4,10 @@ import RofiCore
 import os
 
 /// Runs one synchronous dmenu interaction on the main actor. With `input`,
-/// the panel opens at once and rows stream in from that file descriptor.
+/// the panel opens at once and rows stream in from what `open` returns.
 @MainActor public func runDmenuPanel(
     session: DmenuSession,
-    streaming input: (fileDescriptor: Int32, separator: UInt8)? = nil
+    streaming input: (open: @Sendable () -> Int32, separator: UInt8)?
 ) -> DmenuCompletion {
     let application = NSApplication.shared
     // Regular policy reliably registers this unbundled CLI for activation.
@@ -70,7 +70,7 @@ import os
     }
 
     private var session: DmenuSession
-    private let input: (fileDescriptor: Int32, separator: UInt8)?
+    private let input: (open: @Sendable () -> Int32, separator: UInt8)?
     private let pendingInput = OSAllocatedUnfairLock(initialState: PendingInput())
     private let panel: DmenuPanel
     private let searchField = NSSearchField()
@@ -80,7 +80,7 @@ import os
     private var suppressTableSelectionChanges = false
     private(set) var completion: DmenuCompletion?
 
-    init(session: DmenuSession, input: (fileDescriptor: Int32, separator: UInt8)?) {
+    init(session: DmenuSession, input: (open: @Sendable () -> Int32, separator: UInt8)?) {
         self.session = session
         self.input = input
         panel = DmenuPanel(
@@ -106,7 +106,7 @@ import os
     func startStreaming() {
         guard let input else { return }
         streamRows(
-            fileDescriptor: input.fileDescriptor,
+            open: input.open,
             separator: input.separator,
             onRows: { [self] in enqueueInput(rows: $0) },
             onEnd: { [self] in enqueueInput(ended: true) }

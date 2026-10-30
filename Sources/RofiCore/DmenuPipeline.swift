@@ -123,18 +123,19 @@ public func readRows(fileDescriptor fd: Int32, separator: UInt8) -> [Row] {
     return rows
 }
 
-/// Reads `fd` on a background thread, calling `onRows` from it with each
-/// non-empty batch, then `onEnd` once at end of input.
+/// Opens and reads the input on a background thread, calling `onRows` from it
+/// with each non-empty batch, then `onEnd` once at end of input. Returns
+/// without waiting for `open`, which blocks on a FIFO with no writer.
 // ponytail: a partial line waits for its separator or EOF; rofi flushes it
 // after 250 ms (source/modes/dmenu.c:275), which splits slow lines.
 public func streamRows(
-    fileDescriptor fd: Int32,
+    open: @escaping @Sendable () -> Int32,
     separator: UInt8,
     onRows: @escaping @Sendable ([Row]) -> Void,
     onEnd: @escaping @Sendable () -> Void
 ) {
     Thread.detachNewThread {
-        readRowBatches(fileDescriptor: fd, separator: separator, onRows)
+        readRowBatches(fileDescriptor: open(), separator: separator, onRows)
         onEnd()
     }
 }

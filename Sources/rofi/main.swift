@@ -7,6 +7,19 @@ func fail(_ message: String) -> Never {
     exit(1)
 }
 
+func failToOpen(_ path: String) -> Never {
+    fail("Failed to open file: \(path): \(String(cString: strerror(errno)))")
+}
+
+/// Blocks on a FIFO with no writer. O_NONBLOCK would avoid that, but its
+/// read() returns 0 with no writer, which looks like end of input.
+func openInput(_ path: String?) -> Int32 {
+    guard let path else { return STDIN_FILENO }
+    let input = open(path, O_RDONLY | O_CLOEXEC)
+    if input == -1 { failToOpen(path) }
+    return input
+}
+
 func finish(_ completion: DmenuCompletion) -> Never {
     if let output = completion.output {
         FileHandle.standardOutput.write(Data(output.utf8))
@@ -26,15 +39,16 @@ do {
     fail("\(error)")
 }
 
-// `-dump` reads synchronously; `-input` is opened as given
-// (source/modes/dmenu.c:536-542, 639-656).
-var input = STDIN_FILENO
-if let path = args.string("-input") {
-    input = open(path, O_RDONLY | O_CLOEXEC)
-    if input == -1 { fail("Failed to open file: \(path): \(String(cString: strerror(errno)))") }
-}
+// `-dump` reads synchronously here; async input is opened on the reader thread,
+// and `-input` is opened as given (source/modes/dmenu.c:536-542, 609-638, 639-656).
+// `access` reports failures before the panel: opening a FIFO just to probe it
+// would release a blocked writer and then leave it with no reader.
+// ponytail: a path that stops being readable after this check fails with the
+// panel already up.
+let path = args.string("-input")
+if pipeline.isAsync, let path, access(path, R_OK) != 0 { failToOpen(path) }
 
-let rows = pipeline.isAsync ? [] : readRows(fileDescriptor: input, separator: pipeline.separator)
+let rows = pipeline.isAsync ? [] : readRows(fileDescriptor: openInput(path), separator: pipeline.separator)
 if args.has("-dump") {
     FileHandle.standardOutput.write(Data(pipeline.dump(rows: rows).joined().utf8))
     exit(0)
@@ -45,5 +59,5 @@ case .completed(let completion):
     finish(completion)
 case .session(let session):
     // The reader dies with the process when `finish` exits.
-    finish(runDmenuPanel(session: session, streaming: pipeline.isAsync ? (input, pipeline.separator) : nil))
+    finish(runDmenuPanel(session: session, streaming: pipeline.isAsync ? ({ [path] in openInput(path) }, pipeline.separator) : nil))
 }
