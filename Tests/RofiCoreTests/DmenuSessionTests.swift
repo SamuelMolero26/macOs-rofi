@@ -220,4 +220,72 @@ import RofiCore
         #expect(completion.outcome == .accepted)
         #expect(completion.outcome.exitCode == 0)
     }
+
+    @Test func appendedMatchesContinueSourceIndicesAndFilterByTheLiveQuery() throws {
+        let pipeline = try pipeline(["-i"])
+        guard case .session(var session) = pipeline.start(rows: fruit) else {
+            Issue.record("Expected an interactive dmenu session")
+            return
+        }
+        #expect(session.updateQuery("an") == nil)
+
+        session.appendRows(["mango", "kiwi", "orange"].map { Row(parsing: $0) })
+
+        #expect(session.matches.map(\.sourceIndex) == [1, 3, 5])
+        #expect(session.matches.map(\.row.text) == ["Banana", "mango", "orange"])
+    }
+
+    @Test func appendKeepsTheCurrentSelection() throws {
+        let pipeline = try pipeline()
+        guard case .session(var session) = pipeline.start(rows: fruit) else {
+            Issue.record("Expected an interactive dmenu session")
+            return
+        }
+        session.selectVisibleIndex(1)
+
+        session.appendRows([Row(parsing: "date")])
+
+        #expect(session.selectedVisibleIndex == 1)
+    }
+
+    @Test func appendSelectsTheFirstMatchOnceOneExists() throws {
+        let pipeline = try pipeline(["-filter", "an"])
+        guard case .session(var session) = pipeline.start(rows: []) else {
+            Issue.record("Expected an interactive dmenu session")
+            return
+        }
+        #expect(session.selectedVisibleIndex == nil)
+
+        session.appendRows([Row(parsing: "apple")])
+        #expect(session.selectedVisibleIndex == nil)
+
+        session.appendRows([Row(parsing: "Banana")])
+        #expect(session.matches.map(\.sourceIndex) == [1])
+        #expect(session.selectedVisibleIndex == 0)
+    }
+
+    @Test func queryUpdateRematchesEveryAppendedRow() throws {
+        let pipeline = try pipeline(["-filter", "an"])
+        guard case .session(var session) = pipeline.start(rows: []) else {
+            Issue.record("Expected an interactive dmenu session")
+            return
+        }
+        session.appendRows(fruit)
+
+        #expect(session.updateQuery("") == nil)
+
+        #expect(session.matches.map(\.sourceIndex) == [0, 1, 2])
+    }
+
+    @Test func acceptOfAnAppendedRowFormatsItsOriginalIndex() throws {
+        let pipeline = try pipeline(["-format", "i:s:f"])
+        guard case .session(var session) = pipeline.start(rows: fruit) else {
+            Issue.record("Expected an interactive dmenu session")
+            return
+        }
+        session.appendRows([Row(parsing: "date")])
+        #expect(session.updateQuery("dat") == nil)
+
+        #expect(session.accept()?.output == "3:date:dat\n")
+    }
 }

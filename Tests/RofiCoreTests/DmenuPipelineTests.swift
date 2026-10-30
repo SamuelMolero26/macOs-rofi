@@ -32,4 +32,17 @@ import RofiCore
 
         #expect(pipeline.dump(rows: [Row(parsing: "entry")]) == ["[]\n"])
     }
+
+    // Contract: source/modes/dmenu.c:533-542.
+    @Test func inputIsAsyncByDefault() throws {
+        #expect(try pipeline().isAsync)
+    }
+
+    @Test(arguments: [
+        ["-sync"], ["-dump"], ["-select", "a"], ["-no-custom"], ["-only-match"],
+        ["-selected-row", "1"], ["-auto-select"],
+    ])
+    func forcingFlagsMakeInputSync(flags: [String]) throws {
+        #expect(try !pipeline(flags).isAsync)
+    }
 }

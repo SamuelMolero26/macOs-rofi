@@ -34,7 +34,7 @@ if let path = args.string("-input") {
     if input == -1 { fail("Failed to open file: \(path): \(String(cString: strerror(errno)))") }
 }
 
-let rows = readRows(fileDescriptor: input, separator: pipeline.separator)
+let rows = pipeline.isAsync ? [] : readRows(fileDescriptor: input, separator: pipeline.separator)
 if args.has("-dump") {
     FileHandle.standardOutput.write(Data(pipeline.dump(rows: rows).joined().utf8))
     exit(0)
@@ -44,5 +44,6 @@ switch pipeline.start(rows: rows) {
 case .completed(let completion):
     finish(completion)
 case .session(let session):
-    finish(runDmenuPanel(session: session))
+    // The reader dies with the process when `finish` exits.
+    finish(runDmenuPanel(session: session, streaming: pipeline.isAsync ? (input, pipeline.separator) : nil))
 }
