@@ -13,15 +13,22 @@ public struct Row: Equatable, Sendable {
     public var active = false
 
     public init(parsing line: String) {
-        // The extras are read as a C string, so a second NUL ends them.
-        let parts = line.split(separator: "\0", maxSplits: 2, omittingEmptySubsequences: false)
-        text = String(parts[0])
-        guard parts.count > 1 else { return }
+        self.init(parsing: Array(line.utf8))
+    }
 
-        let fields = parts[1].split(separator: "\u{1F}", omittingEmptySubsequences: false)
+    /// Only the text goes through `rofi_force_utf8` (source/modes/dmenu.c:181-190).
+    public init<C: Collection>(parsing bytes: C) where C.Element == UInt8 {
+        let nul = bytes.firstIndex(of: 0) ?? bytes.endIndex
+        text = forceUTF8(bytes[..<nul])
+        guard nul != bytes.endIndex else { return }
+
+        // The extras are read as a C string, so a second NUL ends them.
+        // ponytail: rofi keeps extras as raw bytes; invalid UTF-8 here becomes U+FFFD.
+        let extras = bytes[bytes.index(after: nul)...].prefix { $0 != 0 }
+        let fields = extras.split(separator: 0x1F, omittingEmptySubsequences: false).map(forceUTF8)
         // A trailing key without a value is dropped, like rofi's pair loop.
         for i in stride(from: 0, to: fields.count - 1, by: 2) {
-            let value = String(fields[i + 1])
+            let value = fields[i + 1]
             let isTrue = value.lowercased() == "true"
             switch fields[i].lowercased() {
             case "icon":
