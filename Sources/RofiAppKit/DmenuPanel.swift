@@ -232,12 +232,13 @@ import os
             resultsTop = messageLabel.bottomAnchor
         }
         // Full width unless the loading label needs the room, so the label
-        // never covers the field's cancel button.
+        // never covers the field's cancel button. Below the label's compression
+        // resistance (750), or a long prompt squeezes the label away.
         let searchFieldFullWidth = searchField.trailingAnchor.constraint(
             equalTo: contentView.trailingAnchor,
             constant: -Layout.inset
         )
-        searchFieldFullWidth.priority = .defaultHigh
+        searchFieldFullWidth.priority = NSLayoutConstraint.Priority(700)
         searchFieldBesideLoading.isActive = !loadingLabel.isHidden
         NSLayoutConstraint.activate([
             loadingLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -Layout.inset),
