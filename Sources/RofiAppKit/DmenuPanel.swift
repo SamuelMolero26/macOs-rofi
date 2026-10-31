@@ -42,6 +42,10 @@ import RofiCore
             }
         }
     }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        controller.focus()
+    }
 }
 
 @MainActor private final class DmenuPanelController: NSObject {
@@ -130,6 +134,7 @@ import RofiCore
     private func configureLayout() {
         guard let contentView = panel.contentView else { return }
         contentView.addSubview(searchField)
+        panel.initialFirstResponder = searchField
         contentView.addSubview(scrollView)
         NSLayoutConstraint.activate([
             searchField.topAnchor.constraint(equalTo: contentView.topAnchor, constant: Layout.inset),
