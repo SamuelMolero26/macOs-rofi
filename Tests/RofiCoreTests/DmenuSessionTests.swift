@@ -101,11 +101,12 @@ import RofiCore
     @Test func nonselectableRowsStayVisibleButDoNotComplete() throws {
         var row = Row(parsing: "heading")
         row.nonselectable = true
-        let pipeline = try pipeline(["-no-custom"])
-        guard case .session(let session) = pipeline.start(rows: [row]) else {
+        let pipeline = try pipeline()
+        guard case .session(var session) = pipeline.start(rows: [row]) else {
             Issue.record("Expected an interactive dmenu session")
             return
         }
+        #expect(session.updateQuery("head") == nil)
 
         #expect(session.matches.map(\.row.text) == ["heading"])
         #expect(session.selectedVisibleIndex == 0)
