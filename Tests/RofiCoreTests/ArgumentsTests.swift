@@ -48,6 +48,11 @@ import RofiCore
         #expect(Arguments(["rofi", "-l", ""]).uint("-l") == 0)
     }
 
+    @Test func uintIsAlwaysBaseTen() {
+        #expect(Arguments(["rofi", "-l", "010"]).uint("-l") == 10)
+        #expect(Arguments(["rofi", "-l", "0x10"]).uint("-l") == 0)
+    }
+
     @Test func uintWrapsIntoAnUnsignedInt() {
         #expect(Arguments(["rofi", "-l", "-1"]).uint("-l") == UInt32.max)
         #expect(Arguments(["rofi", "-l", "4294967299"]).uint("-l") == 3)

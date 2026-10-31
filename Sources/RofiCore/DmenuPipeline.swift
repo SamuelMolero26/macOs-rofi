@@ -51,6 +51,13 @@ public struct DmenuPipeline: Sendable {
     /// The window title around `prompt` (source/view.c:1892-1894).
     public var windowTitle: String { "rofi - \(prompt)" }
 
+    /// Rows the panel is sized around, or nil for the default panel. A message
+    /// adds to the window, so it must not take from the default rows
+    /// (source/xcb/view.c:896-897).
+    public var fixedRows: Int? {
+        lines ?? (message == nil ? nil : Int(defaultMenuLines))
+    }
+
     /// Reads the options from the command line (source/modes/dmenu.c:550-560,
     /// 605-608 and the config options in source/xrmoptions.c).
     public init(arguments args: Arguments) throws {

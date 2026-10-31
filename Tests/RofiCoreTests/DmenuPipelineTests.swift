@@ -97,7 +97,8 @@ import RofiCore
 
     // Contract: source/modes/dmenu.c:575-590 and DEFAULT_MENU_LINES,
     // include/settings.h:231.
-    @Test(arguments: [[], ["-l"], ["-l", "15"]])
+    // 4294967311 is 2^32 + 15: upstream compares after narrowing to unsigned.
+    @Test(arguments: [[], ["-l"], ["-l", "15"], ["-l", "4294967311"]])
     func linesStayUnsetWithoutARealOverride(flags: [String]) throws {
         #expect(try pipeline(flags).lines == nil)
     }
@@ -119,6 +120,25 @@ import RofiCore
         #expect(try pipeline(["-l", value]).lines == 0)
     }
 
+    // The window height is the sum of its widgets, so a message adds to the
+    // default rows instead of taking from them (source/xcb/view.c:896-897).
+    @Test func messageKeepsTheDefaultRows() throws {
+        #expect(try pipeline(["-mesg", "hello"]).fixedRows == 15)
+        #expect(try pipeline(["-mesg", ""]).fixedRows == 15)
+        #expect(try pipeline(["-l", "15", "-mesg", "hello"]).fixedRows == 15)
+    }
+
+    @Test func noFixedRowsWithoutLinesOrMessage() throws {
+        #expect(try pipeline().fixedRows == nil)
+        #expect(try pipeline(["-l", "15"]).fixedRows == nil)
+    }
+
+    @Test func linesDecideTheFixedRows() throws {
+        #expect(try pipeline(["-l", "3"]).fixedRows == 3)
+        #expect(try pipeline(["-l", "3", "-mesg", "hello"]).fixedRows == 3)
+        #expect(try pipeline(["-l", "0", "-mesg", "hello"]).fixedRows == 0)
+    }
+
     // Contract: source/modes/dmenu.c:601-603.
     @Test func bottomIsOffByDefault() throws {
         #expect(try !pipeline().atBottom)
@@ -126,7 +146,19 @@ import RofiCore
 
     @Test func bottomFlagIsFoundAnywhereInTheArguments() throws {
         #expect(try pipeline(["-b"]).atBottom)
+        #expect(try pipeline(["-b", "-i"]).atBottom)
         #expect(try pipeline(["-filter", "-b"]).atBottom)
+    }
+
+    @Test func bottomFlagAsAnotherFlagsValueCountsForBoth() throws {
+        let pipeline = try pipeline(["-p", "-b", "-i"])
+
+        #expect(pipeline.atBottom)
+        #expect(pipeline.prompt == "-b")
+    }
+
+    @Test func bottomFlagIgnoresASCIICase() throws {
+        #expect(try pipeline(["-B"]).atBottom)
     }
 
     @Test func sessionExposesItsPipelineToTheUI() throws {
