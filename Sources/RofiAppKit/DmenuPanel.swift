@@ -73,7 +73,9 @@ import os
     private let input: (open: @Sendable () -> Int32, separator: UInt8)?
     private let pendingInput = OSAllocatedUnfairLock(initialState: PendingInput())
     private let panel: DmenuPanel
+    private let promptLabel = NSTextField(labelWithString: "")
     private let searchField = NSSearchField()
+    private let messageLabel = NSTextField(wrappingLabelWithString: "")
     private let tableView = DmenuTableView()
     private let scrollView = NSScrollView()
     private let loadingLabel = NSTextField(labelWithString: "Loading.. ")
@@ -91,7 +93,9 @@ import os
         )
         super.init()
         configurePanel()
+        configurePromptLabel()
         configureSearchField()
+        configureMessageLabel()
         configureTable()
         configureLoadingLabel()
         configureLayout()
@@ -100,6 +104,17 @@ import os
 
     func present() {
         panel.center()
+        if let visibleFrame = panel.screen?.visibleFrame {
+            var origin = panel.frame.origin
+            // Upstream's `-b` is location 6, bottom center
+            // (source/modes/dmenu.c:601-603, source/xcb/view.c:275-278, 309-311, 327-330).
+            if session.pipeline.atBottom {
+                origin = NSPoint(x: visibleFrame.midX - panel.frame.width / 2, y: visibleFrame.minY)
+            }
+            // A panel as tall as the screen must not slide under the menu bar.
+            origin.y = min(origin.y, visibleFrame.maxY - panel.frame.height)
+            panel.setFrameOrigin(origin)
+        }
         panel.orderFrontRegardless()
     }
 
@@ -127,8 +142,18 @@ import os
         panel.hasShadow = true
         panel.isOpaque = true
         panel.backgroundColor = .windowBackgroundColor
-        panel.title = "Rofi dmenu"
-        panel.setAccessibilityLabel("Rofi dmenu")
+        panel.title = session.pipeline.windowTitle
+        panel.setAccessibilityLabel(session.pipeline.windowTitle)
+    }
+
+    /// A long prompt truncates instead of squeezing the input.
+    private func configurePromptLabel() {
+        promptLabel.stringValue = session.pipeline.prompt
+        promptLabel.lineBreakMode = .byTruncatingTail
+        promptLabel.maximumNumberOfLines = 1
+        promptLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        promptLabel.setAccessibilityLabel("Dmenu prompt")
+        promptLabel.translatesAutoresizingMaskIntoConstraints = false
     }
 
     private func configureSearchField() {
@@ -138,11 +163,25 @@ import os
         searchField.translatesAutoresizingMaskIntoConstraints = false
     }
 
+    /// A message too tall for the panel is clipped; the rows stay usable.
+    // ponytail: Pango markup shows as raw text (source/view.c:1762).
+    private func configureMessageLabel() {
+        messageLabel.stringValue = session.pipeline.message ?? ""
+        messageLabel.isSelectable = false
+        messageLabel.preferredMaxLayoutWidth = Layout.panelSize.width - 2 * Layout.inset
+        messageLabel.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+        messageLabel.setAccessibilityLabel("Dmenu message")
+        messageLabel.translatesAutoresizingMaskIntoConstraints = false
+    }
+
     private func configureTable() {
         let column = NSTableColumn(identifier: Identifier.column)
         column.resizingMask = .autoresizingMask
         tableView.addTableColumn(column)
         tableView.headerView = nil
+        // The default inset style pads rows by an unexposed amount, which
+        // would clip the last row of a panel sized by `-l`.
+        tableView.style = .fullWidth
         tableView.allowsMultipleSelection = false
         // Like upstream, a visible row stays selected, so Return is predictable.
         tableView.allowsEmptySelection = false
@@ -157,32 +196,70 @@ import os
     }
 
     /// Upstream's overlay (source/modes/dmenu.c:1059), drawn over the results.
+    /// `-l 0` leaves no results to draw over, so it stays hidden.
     private func configureLoadingLabel() {
         loadingLabel.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
         loadingLabel.textColor = .secondaryLabelColor
         loadingLabel.drawsBackground = true
         loadingLabel.backgroundColor = .windowBackgroundColor
         loadingLabel.setAccessibilityLabel("Dmenu loading")
-        loadingLabel.isHidden = input == nil
+        loadingLabel.isHidden = input == nil || session.pipeline.lines == 0
         loadingLabel.translatesAutoresizingMaskIntoConstraints = false
     }
 
     private func configureLayout() {
         guard let contentView = panel.contentView else { return }
+        let lines = session.pipeline.lines
+        let rowHeight = tableView.rowHeight + tableView.intercellSpacing.height
+        contentView.addSubview(promptLabel)
         contentView.addSubview(searchField)
         contentView.addSubview(scrollView)
         contentView.addSubview(loadingLabel)
+        var resultsTop = searchField.bottomAnchor
+        if session.pipeline.message != nil {
+            contentView.addSubview(messageLabel)
+            NSLayoutConstraint.activate([
+                messageLabel.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: Layout.spacing),
+                messageLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: Layout.inset),
+                messageLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -Layout.inset),
+            ])
+            resultsTop = messageLabel.bottomAnchor
+        }
         NSLayoutConstraint.activate([
             loadingLabel.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
             loadingLabel.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor),
+            promptLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: Layout.inset),
+            promptLabel.centerYAnchor.constraint(equalTo: searchField.centerYAnchor),
             searchField.topAnchor.constraint(equalTo: contentView.topAnchor, constant: Layout.inset),
-            searchField.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: Layout.inset),
+            searchField.leadingAnchor.constraint(equalTo: promptLabel.trailingAnchor, constant: Layout.spacing),
             searchField.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -Layout.inset),
-            scrollView.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: Layout.spacing),
+            searchField.widthAnchor.constraint(greaterThanOrEqualTo: contentView.widthAnchor, multiplier: 0.5),
+            scrollView.topAnchor.constraint(equalTo: resultsTop, constant: lines == 0 ? 0 : Layout.spacing),
             scrollView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: Layout.inset),
             scrollView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -Layout.inset),
             scrollView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -Layout.inset),
+            scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: lines == 0 ? 0 : rowHeight),
         ])
+        if let lines {
+            fitPanel(toRowsHeight: CGFloat(lines) * rowHeight)
+        }
+    }
+
+    /// Sizes the panel around `-l` rows, no taller than the screen. The rows
+    /// constraint sits below window-stay-put priority, so at that cap the rows
+    /// shrink instead of the window growing. Fixed, like upstream's default
+    /// `fixed_num_lines` (config/config.c:101), however few rows match.
+    private func fitPanel(toRowsHeight rowsHeight: CGFloat) {
+        guard let contentView = panel.contentView else { return }
+        let maximumHeight = panel.screen?.visibleFrame.height ?? Layout.panelSize.height
+        // The cap also keeps a huge `-l` within Auto Layout's limits.
+        let rowsConstraint = scrollView.heightAnchor.constraint(equalToConstant: min(rowsHeight, maximumHeight))
+        rowsConstraint.priority = .dragThatCannotResizeWindow
+        rowsConstraint.isActive = true
+        panel.setContentSize(NSSize(
+            width: Layout.panelSize.width,
+            height: min(contentView.fittingSize.height, maximumHeight)
+        ))
     }
 
     /// Runs on the reader thread. Batches coalesce into one outstanding drain.

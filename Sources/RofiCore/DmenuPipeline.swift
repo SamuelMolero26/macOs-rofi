@@ -38,6 +38,18 @@ public struct DmenuPipeline: Sendable {
     public var noCustom = false
     /// Rows arrive while the panel is open instead of being read up front.
     public var isAsync = true
+    /// Upstream's `display_name`: one string names both the prompt and the
+    /// window, so `-p` and `-window-title` each change both.
+    public var prompt = "dmenu"
+    /// Shown raw, unlike upstream's Pango markup (source/view.c:1762).
+    public var message: String?
+    /// Visible result rows, or nil to keep the default panel size.
+    public var lines: Int?
+    /// `-b`: bottom center, not dmenu's full-width bar.
+    public var atBottom = false
+
+    /// The window title around `prompt` (source/view.c:1892-1894).
+    public var windowTitle: String { "rofi - \(prompt)" }
 
     /// Reads the options from the command line (source/modes/dmenu.c:550-560,
     /// 605-608 and the config options in source/xrmoptions.c).
@@ -65,6 +77,16 @@ public struct DmenuPipeline: Sendable {
         // These only work in sync mode (source/modes/dmenu.c:536-542).
         isAsync = !autoSelect && !["-sync", "-dump", "-select", "-no-custom", "-only-match", "-selected-row"]
             .contains(where: args.has)
+        // `-p` is read last, so it wins (source/modes/dmenu.c:591-595, 1035).
+        prompt = args.string("-p") ?? args.string("-window-title") ?? prompt
+        message = args.string("-mesg")
+        // The default overrides nothing, so it counts as unset, and the theme
+        // value is a signed int (source/modes/dmenu.c:575-590). A negative
+        // height is meaningless here, so it shows no rows like `-l 0`.
+        if let value = args.uint("-l"), value != defaultMenuLines {
+            lines = max(0, Int(Int32(truncatingIfNeeded: value)))
+        }
+        atBottom = args.has("-b")
     }
 
     /// Matches row text while retaining each row's original input position.
@@ -100,6 +122,9 @@ public struct DmenuPipeline: Sendable {
 
 /// Source compatibility for the first no-UI dmenu implementation.
 public typealias DmenuDump = DmenuPipeline
+
+/// `DEFAULT_MENU_LINES` (include/settings.h:231).
+private let defaultMenuLines: UInt32 = 15
 
 /// `config.matching`: every comma-separated name must be valid (ASCII case
 /// ignored); the first one is used (source/helper.c:695-731). `""` splits

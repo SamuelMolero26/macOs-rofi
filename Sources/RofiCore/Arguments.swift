@@ -1,5 +1,7 @@
+import Foundation
+
 /// The command line, looked up the way rofi's `find_arg*` helpers do
-/// (source/helper.c:325-342, 431-439). Like rofi, `argv` includes argv[0].
+/// (source/helper.c:325-342, 373-380, 431-439). Like rofi, `argv` includes argv[0].
 public struct Arguments: Sendable {
     public let argv: [String]
 
@@ -23,6 +25,12 @@ public struct Arguments: Sendable {
     /// `find_arg_char`: the value parsed by `helper_parse_char`.
     public func char(_ key: String) -> UInt8? {
         string(key).map(parseSeparator)
+    }
+
+    /// `find_arg_uint`: `strtoul` narrowed to an unsigned int, so garbage is 0
+    /// and a sign or overflow wraps.
+    public func uint(_ key: String) -> UInt32? {
+        string(key).map { UInt32(truncatingIfNeeded: strtoul($0, nil, 10)) }
     }
 
     /// A boolean option (source/xrmoptions.c:760-771): `-name` sets true;

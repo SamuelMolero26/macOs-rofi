@@ -23,7 +23,7 @@ public struct DmenuSession: Sendable {
     public private(set) var matches: [DmenuMatch]
     public private(set) var selectedVisibleIndex: Int?
 
-    private let pipeline: DmenuPipeline
+    public let pipeline: DmenuPipeline
     private var rows: [Row]
 
     fileprivate init(pipeline: DmenuPipeline, rows: [Row], query: String) {
