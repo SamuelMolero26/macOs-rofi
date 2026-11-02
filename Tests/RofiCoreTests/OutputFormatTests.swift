@@ -35,6 +35,8 @@ import RofiCore
         #expect(line("p", "<b>bold</b> &amp; <span foreground=\"red\">red</span>") == "bold & red\n")
         #expect(line("p", "&#65;&lt;") == "A<\n")
         #expect(line("p", "plain") == "plain\n")
+        // Span attribute values are not validated, so they still strip.
+        #expect(line("p", "<span bogus=\"1\" foreground=\"nope\">x</span>") == "x\n")
     }
 
     @Test(arguments: ["a & b", "<b>unclosed", "<foo>x</foo>"])

@@ -41,33 +41,3 @@ public enum DmenuOutcome: Equatable, Sendable {
 private func shellQuote(_ text: String) -> String {
     "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'"
 }
-
-/// `pango_parse_markup` text extraction: nil when the markup is invalid.
-// ponytail: checks well-formedness and tag names only; Pango's span
-// attribute validation is skipped, so a bad attribute still strips cleanly.
-private func stripPangoMarkup(_ markup: String) -> String? {
-    let parser = XMLParser(data: Data(("<markup>" + markup + "</markup>").utf8))
-    let collector = MarkupTextCollector()
-    parser.delegate = collector
-    return parser.parse() && collector.valid ? collector.text : nil
-}
-
-private let pangoTags: Set<String> = ["markup", "span", "b", "big", "i", "s", "sub", "sup", "small", "tt", "u"]
-
-private final class MarkupTextCollector: NSObject, XMLParserDelegate {
-    var text = ""
-    var valid = true
-
-    func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?,
-                qualifiedName qName: String?, attributes attributeDict: [String: String] = [:]) {
-        guard pangoTags.contains(elementName) else {
-            valid = false
-            parser.abortParsing()
-            return
-        }
-    }
-
-    func parser(_ parser: XMLParser, foundCharacters string: String) {
-        text += string
-    }
-}

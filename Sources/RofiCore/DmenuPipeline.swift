@@ -14,6 +14,11 @@ public struct InvalidMatchingMethod: Error, Equatable, CustomStringConvertible {
     }
 }
 
+/// Which end of a row too long to fit gives way to an ellipsis.
+public enum EllipsizeMode: Equatable, Sendable {
+    case start, middle, end
+}
+
 /// One visible dmenu match and its position in the original input.
 public struct DmenuMatch: Equatable, Sendable {
     public let sourceIndex: Int
@@ -67,6 +72,13 @@ public struct DmenuPipeline: Sendable {
     /// `-display-column-separator`: the case-insensitive regex that splits the
     /// display source into columns.
     public var displayColumnSeparator = "\t"
+    /// `-markup-rows`: rows are Pango markup, drawn styled and matched on
+    /// their text.
+    public var markupRows = false
+    /// `-password`: the query is masked.
+    public var password = false
+    /// Where long rows are cut (source/widgets/listview.c:804).
+    public var ellipsizeMode = EllipsizeMode.end
 
     /// The window title around `prompt` (source/view.c:1892-1894).
     public var windowTitle: String { "rofi - \(prompt)" }
@@ -137,6 +149,18 @@ public struct DmenuPipeline: Sendable {
             displayColumns = columns.isEmpty ? [] : columns.components(separatedBy: ",")
             displayColumnSeparator = args.string("-display-column-separator") ?? displayColumnSeparator
         }
+        markupRows = args.has("-markup-rows")
+        password = args.has("-password")
+        // `-ellipsize-mode` is applied after `-keep-right`, and an unknown mode
+        // keeps the previous one (source/modes/dmenu.c:1039-1055).
+        // ponytail: rofi g_warning()s an unknown mode; it is dropped here.
+        if args.has("-keep-right") { ellipsizeMode = .start }
+        switch args.string("-ellipsize-mode")?.lowercased() {
+        case "start": ellipsizeMode = .start
+        case "middle": ellipsizeMode = .middle
+        case "end": ellipsizeMode = .end
+        default: break
+        }
     }
 
     /// How a row is shown, before any ballot: its `display` extra or else its
@@ -172,11 +196,18 @@ public struct DmenuPipeline: Sendable {
         return selectedRow
     }
 
-    /// Matches row text while retaining each row's original input position.
+    /// Interactive matching, retaining each row's original input position.
+    /// Under `-markup-rows` a row matches on its markup's text, and a row
+    /// whose markup is invalid never matches (source/modes/dmenu.c:668-708).
     public func matchingRows(in rows: [Row], query: String) -> [DmenuMatch] {
+        matchingRows(in: rows, query: query, text: markupRows ? { stripPangoMarkup($0.text) } : \.text)
+    }
+
+    private func matchingRows(in rows: [Row], query: String, text: (Row) -> String?) -> [DmenuMatch] {
         let matcher = Matcher(query: query, options: match)
         return rows.enumerated().compactMap { sourceIndex, row in
-            matcher.matches(row.text) ? DmenuMatch(sourceIndex: sourceIndex, row: row) : nil
+            guard let text = text(row), matcher.matches(text) else { return nil }
+            return DmenuMatch(sourceIndex: sourceIndex, row: row)
         }
     }
 
@@ -208,12 +239,13 @@ public struct DmenuPipeline: Sendable {
 
     /// The no-UI `rofi -dmenu -dump` projection, one output line per match
     /// (source/modes/dmenu.c:989-1034). Command-line shortcuts resolve first,
-    /// exactly as they do for the interactive path.
+    /// exactly as they do for the interactive path. Rows match on their raw
+    /// text, even under `-markup-rows`.
     public func dump(rows: [Row]) -> [String] {
         if let completion = shortcut(rows: rows) {
             return completion.output.map { [$0] } ?? []
         }
-        return matchingRows(in: rows, query: filter ?? "")
+        return matchingRows(in: rows, query: filter ?? "", text: \.text)
             .map { formattedOutput(for: $0, filter: filter) }
     }
 
