@@ -176,9 +176,19 @@ import os
 
     /// Resists compression above the rows constraint, so rows shrink first, but
     /// below window-stay-put, so a message too tall for the panel is clipped.
-    // ponytail: Pango markup shows as raw text (source/view.c:1762).
+    /// The message is always Pango markup (source/view.c:1760-1762); invalid
+    /// markup shows raw.
     private func configureMessageLabel() {
-        messageLabel.stringValue = session.pipeline.message ?? ""
+        let message = session.pipeline.message ?? ""
+        if let font = messageLabel.font, let markup = parsePangoMarkup(message) {
+            messageLabel.attributedStringValue = markup.attributedString(
+                font: font,
+                color: .labelColor,
+                lineBreakMode: .byWordWrapping
+            )
+        } else {
+            messageLabel.stringValue = message
+        }
         messageLabel.isSelectable = false
         messageLabel.preferredMaxLayoutWidth = Layout.panelSize.width - 2 * Layout.inset
         messageLabel.setContentCompressionResistancePriority(
@@ -433,7 +443,12 @@ extension DmenuPanelController: NSTableViewDataSource, NSTableViewDelegate {
             cell = makeCell()
         }
         let match = session.matches[row]
-        cell.textField?.stringValue = session.displayText(for: match)
+        let text = session.displayText(for: match)
+        // Under -markup-rows the ballot is part of the markup, as upstream
+        // marks up the whole formatted row (source/modes/dmenu.c:459-460).
+        // Invalid markup shows raw.
+        cell.textField?.stringValue = text
+        cell.markup = session.pipeline.markupRows ? parsePangoMarkup(text) : nil
         // Active wins over urgent; the -multi-select `.selected` flag is not
         // styled (include/widgets/textbox.h:122, source/widgets/textbox.c:312-315).
         let state = session.state(of: match)
@@ -483,8 +498,14 @@ private final class DmenuPanel: NSPanel {
 
 /// Draws a row's -a/-u color, except on the emphasized cursor row, where the
 /// system's highlighted text color keeps it readable on the accent fill.
+/// Markup colors win over the state color, but not over the highlight.
 private final class DmenuCell: NSTableCellView {
     var stateColor = NSColor.labelColor {
+        didSet { applyTextColor() }
+    }
+
+    /// The row's parsed markup, drawn instead of the plain `stringValue`.
+    var markup: MarkupText? {
         didSet { applyTextColor() }
     }
 
@@ -492,8 +513,22 @@ private final class DmenuCell: NSTableCellView {
         didSet { applyTextColor() }
     }
 
+    /// Rebuilds a markup row in full: its colors live in the attributed
+    /// string, which `textColor` does not restyle.
     private func applyTextColor() {
-        textField?.textColor = backgroundStyle == .emphasized ? .alternateSelectedControlTextColor : stateColor
+        guard let textField else { return }
+        let highlighted = backgroundStyle == .emphasized
+        let color = highlighted ? .alternateSelectedControlTextColor : stateColor
+        if let markup, let font = textField.font {
+            textField.attributedStringValue = markup.attributedString(
+                font: font,
+                color: color,
+                lineBreakMode: textField.lineBreakMode,
+                overridingColors: highlighted
+            )
+        } else {
+            textField.textColor = color
+        }
     }
 }
 

@@ -46,7 +46,7 @@ public struct DmenuPipeline: Sendable {
     /// Upstream's `display_name`: one string names both the prompt and the
     /// window, so `-p` and `-window-title` each change both.
     public var prompt = "dmenu"
-    /// Shown raw, unlike upstream's Pango markup (source/view.c:1762).
+    /// `-mesg`: always Pango markup (source/view.c:1760-1762).
     public var message: String?
     /// Visible result rows, or nil to keep the default panel size.
     public var lines: Int?
