@@ -309,6 +309,159 @@ import RofiCore
 
         #expect(session.matches.map { session.state(of: $0) } == [[], [], [], .active])
     }
+
+    // MARK: -multi-select, kb-accept-alt (Shift+Return, source/keyb.c:127-130)
+    // in dmenu_finalize (source/modes/dmenu.c:833-952).
+
+    @Test func rowsShowTheirTextWithoutMultiSelect() throws {
+        let session = try makeSession()
+
+        #expect(session.matches.map { session.displayText(for: $0) } == ["apple", "Banana", "cherry"])
+    }
+
+    // Contract: dmenu_format_output_string (source/modes/dmenu.c:365-376).
+    @Test func multiSelectPrefixesEveryRowWithItsBallot() throws {
+        var session = try makeSession(["-multi-select", "-ballot-selected-str", "[x] "])
+        #expect(session.acceptAlternate() == nil)
+
+        #expect(session.matches.map { session.displayText(for: $0) } == ["[x] apple", "☐ Banana", "☐ cherry"])
+    }
+
+    @Test func toggleMovesToTheNextVisibleRowAndStopsAtTheLast() throws {
+        var session = try makeSession(["-multi-select"])
+        #expect(session.acceptAlternate() == nil)
+        #expect(session.selectedVisibleIndex == 1)
+
+        session.selectVisibleIndex(2)
+        #expect(session.acceptAlternate() == nil)
+
+        #expect(session.selectedVisibleIndex == 2)
+        #expect(session.matches.map { session.state(of: $0) } == [.selected, [], .selected])
+    }
+
+    // The overlay counts toggled rows against every loaded row
+    // (source/modes/dmenu.c:936-943).
+    @Test func toggleCountsSelectionsInTheOverlayAndUntoggles() throws {
+        var session = try makeSession(["-multi-select"])
+        #expect(session.selectionOverlay == nil)
+
+        #expect(session.acceptAlternate() == nil)
+        #expect(session.selectionOverlay == "1/3")
+        #expect(session.acceptAlternate() == nil)
+        #expect(session.selectionOverlay == "2/3")
+
+        session.selectVisibleIndex(0)
+        #expect(session.acceptAlternate() == nil)
+
+        #expect(session.selectionOverlay == "1/3")
+        #expect(session.matches.map { session.state(of: $0) } == [[], .selected, []])
+        session.selectVisibleIndex(1)
+        #expect(session.acceptAlternate() == nil)
+        #expect(session.selectionOverlay == nil)
+    }
+
+    // Contract: dmenu_print_results prints every toggled row in input order,
+    // whatever is highlighted, and only falls back to the highlighted row or
+    // custom input when nothing is toggled (source/modes/dmenu.c:808-826).
+    @Test func acceptPrintsToggledRowsInInputOrder() throws {
+        var session = try makeSession(["-multi-select", "-format", "i:s:f"])
+        session.selectVisibleIndex(2)
+        #expect(session.acceptAlternate() == nil)
+        session.selectVisibleIndex(0)
+        #expect(session.acceptAlternate() == nil)
+        #expect(session.updateQuery("an") == nil)
+
+        #expect(session.accept() == DmenuCompletion(output: "0:apple:an\n2:cherry:an\n", outcome: .accepted))
+    }
+
+    @Test func customInputPrintsToggledRowsInstead() throws {
+        var session = try makeSession(["-multi-select", "-format", "s:f"])
+        #expect(session.acceptAlternate() == nil)
+        #expect(session.updateQuery("zzz") == nil)
+
+        #expect(session.accept()?.output == "apple:zzz\n")
+        #expect(session.acceptAlternate()?.output == "apple:zzz\n")
+    }
+
+    @Test func untoggledRowsFallBackToTheHighlightedRow() throws {
+        var session = try makeSession(["-multi-select", "-format", "i:s"])
+        #expect(session.acceptAlternate() == nil)
+        session.selectVisibleIndex(0)
+        #expect(session.acceptAlternate() == nil)
+
+        #expect(session.accept()?.output == "1:Banana\n")
+    }
+
+    // Without -multi-select, Shift+Return prints like Return
+    // (source/modes/dmenu.c:880-892, 944-946).
+    @Test(arguments: [[], ["-no-custom"]])
+    func acceptAlternateWithoutMultiSelectAccepts(flags: [String]) throws {
+        var session = try makeSession(flags + ["-format", "i:s"])
+        session.selectVisibleIndex(1)
+
+        #expect(session.acceptAlternate() == DmenuCompletion(output: "1:Banana\n", outcome: .accepted))
+        #expect(session.selectionOverlay == nil)
+    }
+
+    @Test func acceptAlternateWithNoMatchIsCustomInput() throws {
+        var session = try makeSession(["-multi-select", "-format", "i:s"])
+        #expect(session.updateQuery("zzz") == nil)
+
+        #expect(session.acceptAlternate()?.output == "-1:zzz\n")
+    }
+
+    @Test func noCustomAcceptAlternateWithNoMatchKeepsTheSessionOpen() throws {
+        var session = try makeSession(["-multi-select", "-no-custom"])
+        #expect(session.updateQuery("zzz") == nil)
+
+        #expect(session.acceptAlternate() == nil)
+        #expect(session.selectionOverlay == nil)
+    }
+
+    // The #21 rule: Return on a highlighted nonselectable row prints nothing,
+    // even with toggled rows (source/modes/dmenu.c:910-916).
+    @Test func nonselectableHighlightBlocksAcceptAndToggle() throws {
+        var heading = Row(parsing: "heading")
+        heading.nonselectable = true
+        var session = try makeSession(["-multi-select"], rows: [Row(parsing: "apple"), heading])
+        #expect(session.acceptAlternate() == nil)
+        #expect(session.selectedVisibleIndex == 1)
+
+        #expect(session.acceptAlternate() == nil)
+        #expect(session.accept() == nil)
+        #expect(session.selectionOverlay == "1/2")
+        #expect(session.matches.map { session.state(of: $0) } == [.selected, []])
+    }
+
+    // Upstream's -no-custom/-only-match branch toggles before it checks
+    // nonselectable (source/modes/dmenu.c:853 before 883).
+    @Test(arguments: ["-no-custom", "-only-match"])
+    func customDisabledModesToggleNonselectableRows(flag: String) throws {
+        var heading = Row(parsing: "heading")
+        heading.nonselectable = true
+        var session = try makeSession(["-multi-select", flag, "-format", "s"], rows: [heading, Row(parsing: "apple")])
+
+        #expect(session.acceptAlternate() == nil)
+
+        #expect(session.selectionOverlay == "1/2")
+        #expect(session.selectedVisibleIndex == 1)
+        // Return still refuses a highlighted nonselectable row.
+        session.selectVisibleIndex(0)
+        #expect(session.accept() == nil)
+        session.selectVisibleIndex(1)
+        #expect(session.accept()?.output == "heading\n")
+    }
+
+    @Test func togglesSurviveAppendedRows() throws {
+        var session = try makeSession(["-multi-select", "-format", "i"])
+        #expect(session.acceptAlternate() == nil)
+        session.appendRows([Row(parsing: "date")])
+        session.selectVisibleIndex(3)
+        #expect(session.acceptAlternate() == nil)
+
+        #expect(session.selectionOverlay == "2/4")
+        #expect(session.accept()?.output == "0\n3\n")
+    }
 }
 
 private extension DmenuStart {

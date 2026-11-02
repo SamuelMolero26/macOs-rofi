@@ -56,6 +56,11 @@ public struct DmenuPipeline: Sendable {
     public var activeRows: [RowRange] = []
     /// `-u`: rows drawn as urgent.
     public var urgentRows: [RowRange] = []
+    /// `-multi-select`: Shift+Return toggles rows, and accepting prints them all.
+    public var multiSelect = false
+    /// Prefixes for toggled and untoggled rows under `-multi-select`.
+    public var ballotSelected = "☑ "
+    public var ballotUnselected = "☐ "
 
     /// The window title around `prompt` (source/view.c:1892-1894).
     public var windowTitle: String { "rofi - \(prompt)" }
@@ -116,6 +121,10 @@ public struct DmenuPipeline: Sendable {
         // Contract: source/modes/dmenu.c:561-572.
         activeRows = args.string("-a").map(parseRowRanges) ?? []
         urgentRows = args.string("-u").map(parseRowRanges) ?? []
+        // Contract: source/modes/dmenu.c:543-545 and 981-984.
+        multiSelect = args.has("-multi-select")
+        ballotSelected = args.string("-ballot-selected-str") ?? ballotSelected
+        ballotUnselected = args.string("-ballot-unselected-str") ?? ballotUnselected
     }
 
     /// The source row selected when the dialog opens: the first row matching

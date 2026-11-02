@@ -247,4 +247,32 @@ import RofiCore
 
         #expect(selecting.dump(rows: fruit) == plain.dump(rows: fruit))
     }
+
+    // Contract: source/modes/dmenu.c:534, 543-545 and 981-984.
+    @Test func multiSelectAndBallotsHaveUpstreamDefaults() throws {
+        let pipeline = try pipeline()
+
+        #expect(!pipeline.multiSelect)
+        #expect(pipeline.ballotSelected == "☑ ")
+        #expect(pipeline.ballotUnselected == "☐ ")
+    }
+
+    @Test func multiSelectAndBallotsAreRead() throws {
+        let pipeline = try pipeline([
+            "-multi-select", "-ballot-selected-str", "[x] ", "-ballot-unselected-str", "[ ] ",
+        ])
+
+        #expect(pipeline.multiSelect)
+        #expect(pipeline.ballotSelected == "[x] ")
+        #expect(pipeline.ballotUnselected == "[ ] ")
+        // Multi-select keeps async input (source/modes/dmenu.c:537-545).
+        #expect(pipeline.isAsync)
+    }
+
+    @Test func multiSelectDoesNotChangeTheDump() throws {
+        let plain = try pipeline(["-format", "i:s"])
+        let multi = try pipeline(["-format", "i:s", "-multi-select"])
+
+        #expect(multi.dump(rows: fruit) == plain.dump(rows: fruit))
+    }
 }
