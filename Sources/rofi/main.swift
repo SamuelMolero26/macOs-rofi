@@ -2,9 +2,9 @@ import Foundation
 import RofiAppKit
 import RofiCore
 
-func fail(_ message: String) -> Never {
+func fail(_ message: String, status: Int32 = EXIT_FAILURE) -> Never {
     FileHandle.standardError.write(Data("rofi: \(message)\n".utf8))
-    exit(1)
+    exit(status)
 }
 
 func failToOpen(_ path: String) -> Never {
@@ -30,11 +30,14 @@ func finish(_ completion: DmenuCompletion) -> Never {
 let args = Arguments(CommandLine.arguments)
 
 // Script mode and the rest of the CLI arrive in later features.
-guard args.has("-dmenu") else { fail("not implemented yet") }
+let invokedAsDmenu = args.argv.first?.split(separator: "/").last == "dmenu"
+guard args.has("-dmenu") || invokedAsDmenu else { fail("not implemented yet") }
 
 let pipeline: DmenuPipeline
 do {
     pipeline = try DmenuPipeline(arguments: args)
+} catch let error as InvalidMatchingMethod {
+    fail("\(error)", status: EX_DATAERR)
 } catch {
     fail("\(error)")
 }
