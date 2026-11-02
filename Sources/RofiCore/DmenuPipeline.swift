@@ -1,29 +1,16 @@
 import Foundation
 
-/// `-matching` named a method rofi does not know (source/helper.c:726-731).
-public struct InvalidMatchingMethod: Error, Equatable, CustomStringConvertible {
-    public let name: String
+/// `-matching` failed rofi's `config_sanity_check` (source/helper.c:671-780),
+/// which collects one line per error. Its Pango markup is rendered away, as in
+/// the error dialog that shows it (source/rofi.c:855, source/view.c:1993).
+public struct InvalidMatchingConfiguration: Error, Equatable, CustomStringConvertible {
+    public let errors: [String]
 
-    public init(name: String) {
-        self.name = name
-    }
-
-    public var description: String {
-        "config.matching=\(name) is not a valid matching strategy.\n"
-            + "Valid options are: glob, regex, fuzzy, prefix or normal."
-    }
-}
-
-/// `-matching` enabled the fifth recognized method (source/helper.c:709-715).
-public struct TooManyMatchingMethods: Error, Equatable, CustomStringConvertible {
-    public let value: String
-
-    public init(value: String) {
-        self.value = value
-    }
+    /// rofi's error dialog sets `EX_DATAERR` (source/rofi.c:857).
+    public var exitStatus: Int32 { EX_DATAERR }
 
     public var description: String {
-        "config.matching=\(value) to many matching options enabled."
+        "The configuration failed to validate:\n" + errors.joined() + "Please update your configuration."
     }
 }
 
@@ -280,22 +267,27 @@ public typealias DmenuDump = DmenuPipeline
 private let defaultMenuLines: UInt32 = 15
 
 /// `config.matching`: every comma-separated name must be valid (ASCII case
-/// ignored); the first one is used (source/helper.c:695-731). `""` splits
-/// into no names, which returns nil and keeps the default.
+/// ignored); the first one is used. The fifth recognized name is an error and
+/// ends the scan (source/helper.c:695-731). `""` splits into no names, which
+/// returns nil and keeps the default.
 private func parseMatching(_ value: String) throws -> MatchingMethod? {
     let names = value.isEmpty ? [] : value.split(separator: ",", omittingEmptySubsequences: false)
     var firstMethod: MatchingMethod?
     var recognizedCount = 0
-    for name in names {
+    var errors: [String] = []
+    for name in names where recognizedCount < 5 {
         guard let method = MatchingMethod(rawValue: name.lowercased()) else {
-            throw InvalidMatchingMethod(name: String(name))
+            errors.append("\tconfig.matching=\(name) is not a valid matching strategy.\n"
+                + "Valid options are: glob, regex, fuzzy, prefix or normal.\n")
+            continue
         }
         firstMethod = firstMethod ?? method
         recognizedCount += 1
         if recognizedCount == 5 {
-            throw TooManyMatchingMethods(value: value)
+            errors.append("\tconfig.matching = \(value) to many matching options enabled.\n")
         }
     }
+    if !errors.isEmpty { throw InvalidMatchingConfiguration(errors: errors) }
     return firstMethod
 }
 

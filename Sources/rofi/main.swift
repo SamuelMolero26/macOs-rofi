@@ -50,12 +50,8 @@ guard args.has("-dmenu") || invokedAsDmenu else { fail("not implemented yet") }
 let pipeline: DmenuPipeline
 do {
     pipeline = try DmenuPipeline(arguments: args)
-} catch let error as InvalidMatchingMethod {
-    fail("\(error)", status: EX_DATAERR)
-} catch let error as TooManyMatchingMethods {
-    fail("\(error)", status: EX_DATAERR)
 } catch {
-    fail("\(error)")
+    fail("\(error)", status: (error as? InvalidMatchingConfiguration)?.exitStatus ?? EXIT_FAILURE)
 }
 
 // `-dump` reads synchronously here; async input is opened on the reader thread,

@@ -40,14 +40,31 @@ class CLIContractTests(unittest.TestCase):
                 self.assertEqual(result.stderr, b"rofi: not implemented yet\n")
 
     def test_invalid_matching_diagnoses_and_exits_dataerr(self):
-        result = self.run_rofi("rofi", "-dmenu", "-dump", "-matching", "bogus")
+        result = self.run_rofi("rofi", "-dmenu", "-dump", "-matching", "bogus,fuzzy,nope")
 
         self.assertEqual(result.returncode, 65)
         self.assertEqual(result.stdout, b"")
         self.assertEqual(
             result.stderr,
-            b"rofi: config.matching=bogus is not a valid matching strategy.\n"
-            b"Valid options are: glob, regex, fuzzy, prefix or normal.\n",
+            b"rofi: The configuration failed to validate:\n"
+            b"\tconfig.matching=bogus is not a valid matching strategy.\n"
+            b"Valid options are: glob, regex, fuzzy, prefix or normal.\n"
+            b"\tconfig.matching=nope is not a valid matching strategy.\n"
+            b"Valid options are: glob, regex, fuzzy, prefix or normal.\n"
+            b"Please update your configuration.\n",
+        )
+
+    def test_too_many_matching_methods_diagnoses_and_exits_dataerr(self):
+        value = "normal,regex,glob,fuzzy,prefix"
+        result = self.run_rofi("rofi", "-dmenu", "-dump", "-matching", value)
+
+        self.assertEqual(result.returncode, 65)
+        self.assertEqual(result.stdout, b"")
+        self.assertEqual(
+            result.stderr,
+            b"rofi: The configuration failed to validate:\n"
+            b"\tconfig.matching = " + value.encode() + b" to many matching options enabled.\n"
+            b"Please update your configuration.\n",
         )
 
     def test_separator_preserves_a_non_utf8_argv_byte(self):

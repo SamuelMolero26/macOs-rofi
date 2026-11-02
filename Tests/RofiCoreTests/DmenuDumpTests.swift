@@ -70,24 +70,68 @@ import RofiCore
         #expect(try dump(["-matching", ""]).match.method == .normal)
     }
 
+    /// config_sanity_check's message with its Pango markup rendered away
+    /// (source/helper.c:673-674, 711-714, 719-723, 772; source/rofi.c:855).
+    private func matchingError(_ value: String) -> String? {
+        do {
+            _ = try dump(["-matching", value])
+            return nil
+        } catch {
+            return "\(error)"
+        }
+    }
+
+    private func validation(_ errors: String...) -> String {
+        "The configuration failed to validate:\n" + errors.joined() + "Please update your configuration."
+    }
+
+    private func invalid(_ name: String) -> String {
+        "\tconfig.matching=\(name) is not a valid matching strategy.\n"
+            + "Valid options are: glob, regex, fuzzy, prefix or normal.\n"
+    }
+
+    private func tooMany(_ value: String) -> String {
+        "\tconfig.matching = \(value) to many matching options enabled.\n"
+    }
+
     @Test func anUnknownMatchingMethodAnywhereIsAnError() {
-        #expect(throws: InvalidMatchingMethod(name: "bogus")) { try dump(["-matching", "bogus"]) }
-        #expect(throws: InvalidMatchingMethod(name: "bogus")) { try dump(["-matching", "normal,bogus"]) }
+        #expect(matchingError("bogus") == validation(invalid("bogus")))
+        #expect(matchingError("normal,bogus") == validation(invalid("bogus")))
+    }
+
+    @Test func everyUnknownMatchingMethodIsReported() {
+        #expect(matchingError("bogus,regex,,nope") == validation(invalid("bogus"), invalid(""), invalid("nope")))
+    }
+
+    @Test func matchingErrorsExitWithDataErr() {
+        do {
+            _ = try dump(["-matching", "bogus"])
+            Issue.record("no error thrown")
+        } catch let error as InvalidMatchingConfiguration {
+            #expect(error.exitStatus == EX_DATAERR)
+        } catch {
+            Issue.record(error)
+        }
     }
 
     @Test func fifthRecognizedMatchingMethodIsAnError() {
         let value = "normal,regex,glob,fuzzy,prefix"
-        #expect(throws: TooManyMatchingMethods(value: value)) { try dump(["-matching", value]) }
+        #expect(matchingError(value) == validation(tooMany(value)))
     }
 
     @Test func duplicateMatchingMethodsCountTowardTheLimit() {
         let value = "normal,normal,normal,normal,normal"
-        #expect(throws: TooManyMatchingMethods(value: value)) { try dump(["-matching", value]) }
+        #expect(matchingError(value) == validation(tooMany(value)))
     }
 
     @Test func matchingNamesAfterTheLimitAreNotInspected() {
         let value = "normal,regex,glob,fuzzy,prefix,bogus"
-        #expect(throws: TooManyMatchingMethods(value: value)) { try dump(["-matching", value]) }
+        #expect(matchingError(value) == validation(tooMany(value)))
+    }
+
+    @Test func unknownNamesBeforeTheLimitAreReportedWithIt() {
+        let value = "bogus,normal,regex,glob,fuzzy,prefix"
+        #expect(matchingError(value) == validation(invalid("bogus"), tooMany(value)))
     }
 
     @Test func onlyMatchWithNoRowsPrintsNothing() throws {
