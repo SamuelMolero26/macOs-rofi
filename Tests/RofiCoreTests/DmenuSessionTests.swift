@@ -10,12 +10,19 @@ import RofiCore
 
     private let fruit = ["apple", "Banana", "cherry"].map { Row(parsing: $0) }
 
+    // `start` is the only supported way to obtain a session, so the seeding
+    // rule (query comes from `-filter`) stays owned by production code and is
+    // never restated here.
+    private func makeSession(_ argv: [String] = [], rows: [Row]? = nil) throws -> DmenuSession {
+        let pipeline = try pipeline(argv)
+        return try #require(
+            pipeline.start(rows: rows ?? fruit).session,
+            "Expected an interactive dmenu session"
+        )
+    }
+
     @Test func interactiveEmptyQueryIsARealFilterForCapitalF() throws {
-        let pipeline = try pipeline(["-format", "[F]"])
-        guard case .session(let session) = pipeline.start(rows: [Row(parsing: "entry")]) else {
-            Issue.record("Expected an interactive dmenu session")
-            return
-        }
+        let session = try makeSession(["-format", "[F]"], rows: [Row(parsing: "entry")])
         #expect(session.query == "")
         #expect(session.accept()?.output == "['']\n")
     }
@@ -33,11 +40,7 @@ import RofiCore
     }
 
     @Test func queryUpdateKeepsInputOrderAndResetsSelectionToFirstMatch() throws {
-        let pipeline = try pipeline(["-matching", "prefix", "-i"])
-        guard case .session(var session) = pipeline.start(rows: fruit) else {
-            Issue.record("Expected an interactive dmenu session")
-            return
-        }
+        var session = try makeSession(["-matching", "prefix", "-i"])
         session.selectVisibleIndex(2)
 
         #expect(session.updateQuery("ban") == nil)
@@ -52,11 +55,7 @@ import RofiCore
     }
 
     @Test func selectionMovementClampsAndSelectionCanBeExplicit() throws {
-        let pipeline = try pipeline()
-        guard case .session(var session) = pipeline.start(rows: fruit) else {
-            Issue.record("Expected an interactive dmenu session")
-            return
-        }
+        var session = try makeSession()
 
         session.moveSelection(by: -1)
         #expect(session.selectedVisibleIndex == 0)
@@ -73,11 +72,7 @@ import RofiCore
     }
 
     @Test func acceptFormatsSelectedRowWithItsOriginalIndexAndLiveQuery() throws {
-        let pipeline = try pipeline(["-format", "i:s:f"])
-        guard case .session(var session) = pipeline.start(rows: fruit) else {
-            Issue.record("Expected an interactive dmenu session")
-            return
-        }
+        var session = try makeSession(["-format", "i:s:f"])
         #expect(session.updateQuery("err") == nil)
 
         let completion = session.accept()
@@ -88,11 +83,7 @@ import RofiCore
     }
 
     @Test func noSelectionDoesNotComplete() throws {
-        let pipeline = try pipeline(["-no-custom"])
-        guard case .session(var session) = pipeline.start(rows: fruit) else {
-            Issue.record("Expected an interactive dmenu session")
-            return
-        }
+        var session = try makeSession(["-no-custom"])
         session.selectVisibleIndex(nil)
 
         #expect(session.accept() == nil)
@@ -101,11 +92,7 @@ import RofiCore
     @Test func nonselectableRowsStayVisibleButDoNotComplete() throws {
         var row = Row(parsing: "heading")
         row.nonselectable = true
-        let pipeline = try pipeline()
-        guard case .session(var session) = pipeline.start(rows: [row]) else {
-            Issue.record("Expected an interactive dmenu session")
-            return
-        }
+        var session = try makeSession(rows: [row])
         #expect(session.updateQuery("head") == nil)
 
         #expect(session.matches.map(\.row.text) == ["heading"])
@@ -114,11 +101,7 @@ import RofiCore
     }
 
     @Test func noCustomCancelCompletesWithoutOutputAndUsesExitOne() throws {
-        let pipeline = try pipeline(["-no-custom"])
-        guard case .session(let session) = pipeline.start(rows: fruit) else {
-            Issue.record("Expected an interactive dmenu session")
-            return
-        }
+        let session = try makeSession(["-no-custom"])
 
         let completion = session.cancel()
 
@@ -128,21 +111,13 @@ import RofiCore
     }
 
     @Test func onlyMatchCancelKeepsTheSessionOpen() throws {
-        let pipeline = try pipeline(["-only-match"])
-        guard case .session(let session) = pipeline.start(rows: fruit) else {
-            Issue.record("Expected an interactive dmenu session")
-            return
-        }
+        let session = try makeSession(["-only-match"])
 
         #expect(session.cancel() == nil)
     }
 
     @Test func customInputUsesLiveQueryForEntryAndFilter() throws {
-        let pipeline = try pipeline(["-format", "i:d:s:f"])
-        guard case .session(var session) = pipeline.start(rows: fruit) else {
-            Issue.record("Expected an interactive dmenu session")
-            return
-        }
+        var session = try makeSession(["-format", "i:d:s:f"])
         #expect(session.updateQuery("zzz") == nil)
 
         let completion = session.accept()
@@ -153,22 +128,14 @@ import RofiCore
 
     @Test(arguments: ["-only-match", "-no-custom"])
     func flagsDisableCustomInput(flag: String) throws {
-        let pipeline = try pipeline([flag])
-        guard case .session(var session) = pipeline.start(rows: fruit) else {
-            Issue.record("Expected an interactive dmenu session")
-            return
-        }
+        var session = try makeSession([flag])
         #expect(session.updateQuery("zzz") == nil)
 
         #expect(session.accept() == nil)
     }
 
     @Test func selectedRowWinsOverCustomInput() throws {
-        let pipeline = try pipeline(["-format", "i:d:s:f"])
-        guard case .session(var session) = pipeline.start(rows: fruit) else {
-            Issue.record("Expected an interactive dmenu session")
-            return
-        }
+        var session = try makeSession(["-format", "i:d:s:f"])
         #expect(session.updateQuery("app") == nil)
 
         #expect(session.accept()?.output == "0:1:apple:app\n")
@@ -288,5 +255,13 @@ import RofiCore
         #expect(session.updateQuery("dat") == nil)
 
         #expect(session.accept()?.output == "3:date:dat\n")
+    }
+}
+
+private extension DmenuStart {
+    /// The session when `start` did not resolve a command-line shortcut.
+    var session: DmenuSession? {
+        if case .session(let session) = self { return session }
+        return nil
     }
 }

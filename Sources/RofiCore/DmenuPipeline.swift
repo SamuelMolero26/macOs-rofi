@@ -39,6 +39,10 @@ public struct DmenuPipeline: Sendable {
     /// Rows arrive while the panel is open instead of being read up front.
     public var isAsync = true
 
+    /// `-only-match` and `-no-custom` both disable custom input
+    /// (source/modes/dmenu.c:605-608).
+    var allowsCustomInput: Bool { !onlyMatch && !noCustom }
+
     /// Reads the options from the command line (source/modes/dmenu.c:550-560,
     /// 605-608 and the config options in source/xrmoptions.c).
     public init(arguments args: Arguments) throws {
@@ -86,14 +90,38 @@ public struct DmenuPipeline: Sendable {
         )
     }
 
-    /// The no-UI `rofi -dmenu -dump` projection, one output line per match
-    /// (source/modes/dmenu.c:989-1034).
-    public func dump(rows: [Row]) -> [String] {
+    /// dmenu's pre-UI shortcuts, resolved before any dialog exists
+    /// (source/modes/dmenu.c:988-998). `-only-match`/`-no-custom` end an empty
+    /// run silently; `-auto-select` prints a single row whatever the filter
+    /// says. `-dump` and the interactive path share this resolution.
+    public func shortcut(rows: [Row]) -> DmenuCompletion? {
+        if !allowsCustomInput && rows.isEmpty {
+            return DmenuCompletion(output: nil, outcome: .accepted)
+        }
         if autoSelect && rows.count == 1 {
-            return [formattedOutput(for: DmenuMatch(sourceIndex: 0, row: rows[0]), filter: filter)]
+            let match = DmenuMatch(sourceIndex: 0, row: rows[0])
+            return DmenuCompletion(output: formattedOutput(for: match, filter: filter), outcome: .accepted)
+        }
+        return nil
+    }
+
+    /// The no-UI `rofi -dmenu -dump` projection, one output line per match
+    /// (source/modes/dmenu.c:989-1034). Command-line shortcuts resolve first,
+    /// exactly as they do for the interactive path.
+    public func dump(rows: [Row]) -> [String] {
+        if let completion = shortcut(rows: rows) {
+            return completion.output.map { [$0] } ?? []
         }
         return matchingRows(in: rows, query: filter ?? "")
             .map { formattedOutput(for: $0, filter: filter) }
+    }
+
+    /// Applies dmenu's immediate shortcuts or creates pure interactive state.
+    public func start(rows: [Row]) -> DmenuStart {
+        if let completion = shortcut(rows: rows) { return .completed(completion) }
+        let session = DmenuSession(pipeline: self, rows: rows, query: filter ?? "")
+        if let completion = session.autoSelectCompletion() { return .completed(completion) }
+        return .session(session)
     }
 
 }
