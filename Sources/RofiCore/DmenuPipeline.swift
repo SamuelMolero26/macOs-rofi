@@ -119,11 +119,7 @@ public struct DmenuPipeline: Sendable {
         match.tokenize = args.bool("tokenize", default: match.tokenize)
         match.caseSmart = args.bool("case-smart", default: match.caseSmart)
         match.normalize = args.bool("normalize-match", default: match.normalize)
-        // ponytail: a byte above 0x7F maps to its Latin-1 scalar, while rofi
-        // compares it against the token's first raw byte.
-        if let negate = args.char("-matching-negate-char") {
-            match.negateChar = Character(Unicode.Scalar(negate))
-        }
+        match.negateByte = args.char("-matching-negate-char") ?? match.negateByte
         // dmenu forces case sensitivity on unless `-i`, whatever
         // `-case-sensitive` said (source/modes/dmenu.c:605-608).
         match.caseSensitive = !args.has("-i")

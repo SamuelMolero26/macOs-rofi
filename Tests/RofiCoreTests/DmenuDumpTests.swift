@@ -22,7 +22,7 @@ import RofiCore
         #expect(options.match.tokenize)
         #expect(!options.match.caseSmart)
         #expect(!options.match.normalize)
-        #expect(options.match.negateChar == "-")
+        #expect(options.match.negateByte == UInt8(ascii: "-"))
         // dmenu forces case sensitivity on (dmenu.c:605-606).
         #expect(options.match.caseSensitive)
     }
@@ -32,7 +32,12 @@ import RofiCore
         #expect(options.format == "i:s")
         #expect(options.separator == UInt8(ascii: "|"))
         #expect(options.filter == "an")
-        #expect(options.match.negateChar == "!")
+        #expect(options.match.negateByte == UInt8(ascii: "!"))
+    }
+
+    @Test func negateCharKeepsANonASCIIArgumentByte() throws {
+        let args = Arguments(rawArgv: [Array("rofi".utf8), Array("-dmenu".utf8), Array("-matching-negate-char".utf8), [0xC2]])
+        #expect(try DmenuDump(arguments: args).match.negateByte == 0xC2)
     }
 
     @Test func readsTheBooleanOptions() throws {

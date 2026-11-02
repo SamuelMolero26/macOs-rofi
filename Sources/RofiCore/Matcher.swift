@@ -9,7 +9,8 @@ public enum MatchingMethod: String, Sendable {
 public struct MatchOptions: Sendable {
     public var method: MatchingMethod = .normal
     public var tokenize = true
-    public var negateChar: Character = "-"
+    /// `matching_negate_char`: a raw byte, like rofi's `char`.
+    public var negateByte = UInt8(ascii: "-")
     public var normalize = false
     public var caseSensitive = false
     public var caseSmart = false
@@ -54,7 +55,11 @@ private func compile(_ token: String, _ options: MatchOptions, _ caseSensitive: 
     -> (regex: NSRegularExpression, invert: Bool)
 {
     let bytes = token.utf8
-    let invert = bytes.first == rawByte(of: options.negateChar)
+    let invert = bytes.first == options.negateByte
+    // rofi advances one byte (create_regex, source/helper.c:249-252). A stray
+    // continuation byte left behind decodes to U+FFFD here; GRegex rejects that
+    // pattern and the token never matches, so the two agree unless the text
+    // itself holds U+FFFD.
     let text = invert ? String(decoding: bytes.dropFirst(), as: UTF8.self) : token
     let pattern = switch options.method {
     case .normal: escapeRegex(text)
@@ -67,14 +72,6 @@ private func compile(_ token: String, _ options: MatchOptions, _ caseSensitive: 
     // The escaped fallback always compiles.
     let regex = makeRegex(pattern, options, caseSensitive) ?? makeRegex(escapeRegex(text), options, caseSensitive)!
     return (regex, invert)
-}
-
-private func rawByte(of character: Character) -> UInt8? {
-    let scalars = character.unicodeScalars
-    if scalars.count == 1, let value = scalars.first?.value, value <= UInt8.max {
-        return UInt8(value)
-    }
-    return String(character).utf8.first
 }
 
 private func makeRegex(_ pattern: String, _ options: MatchOptions, _ caseSensitive: Bool) -> NSRegularExpression? {

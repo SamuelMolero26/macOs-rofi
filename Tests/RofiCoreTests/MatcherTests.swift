@@ -43,9 +43,24 @@ import RofiCore
         #expect(matches("fire -zz", "firefox"))
         #expect(!matches("-", "firefox"), "a lone negate char inverts an empty, always-matching pattern")
         var options = MatchOptions()
-        options.negateChar = "!"
+        options.negateByte = UInt8(ascii: "!")
         #expect(!matches("!fox", "firefox", options))
         #expect(matches("-fox", "x-foxy", options))
+    }
+
+    @Test func aNonASCIINegateByteComparesTheFirstRawByte() {
+        var options = MatchOptions()
+        // "¬" is C2 AC in UTF-8: rofi's `input[0] == matching_negate_char`
+        // inverts on its lead byte 0xC2, never on its Latin-1 value 0xAC.
+        options.negateByte = 0xC2
+        #expect(matches("¬foo", "foo", options))
+        // The rest, AC "foo", is invalid UTF-8: GRegex rejects it, so the
+        // inverted token passes every row.
+        #expect(matches("¬foo", "x¬foo", options))
+        #expect(!matches("-foo", "foo", options), "the default '-' no longer negates")
+        options.negateByte = 0xAC
+        #expect(!matches("¬foo", "foo", options))
+        #expect(matches("¬foo", "x¬foo", options))
     }
 
     @Test func negationComparesAndRemovesOnlyTheFirstUTF8Byte() {
