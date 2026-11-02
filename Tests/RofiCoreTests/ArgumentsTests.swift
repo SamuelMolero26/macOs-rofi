@@ -32,6 +32,13 @@ import RofiCore
         #expect(Arguments(["-format", "a", "-format", "b"]).string("-format") == nil)
     }
 
+    @Test func bytesReturnTheRawValueOfTheFirstOccurrence() {
+        let args = Arguments(rawArgv: [Array("rofi".utf8), Array("-input".utf8), [0x66, 0xFF]])
+        #expect(args.bytes("-input") == [0x66, 0xFF])
+        #expect(args.string("-input") == "f\u{FFFD}")
+        #expect(args.bytes("-format") == nil)
+    }
+
     @Test func charParsesTheValueLikeHelperParseChar() {
         #expect(Arguments(["rofi", "-sep", "|"]).char("-sep") == UInt8(ascii: "|"))
         #expect(Arguments(["rofi", "-sep", "\\t"]).char("-sep") == 0x09)

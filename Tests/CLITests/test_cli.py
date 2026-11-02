@@ -1,4 +1,5 @@
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -64,6 +65,22 @@ class CLIContractTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.stdout, b"alpha\nbeta\n")
         self.assertEqual(result.stderr, b"")
+
+    def test_input_opens_the_raw_argument_bytes(self):
+        # APFS refuses non-UTF-8 names, so prove the bytes reach open() by
+        # planting the U+FFFD name a lossy decode of b"\xff" would open.
+        with tempfile.TemporaryDirectory() as directory:
+            (Path(directory) / "\ufffd").write_bytes(b"wrong\n")
+            path = directory.encode() + b"/\xff"
+            result = self.run_rofi(b"rofi", b"-dmenu", b"-dump", b"-input", path)
+
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, b"")
+        self.assertEqual(
+            result.stderr,
+            b"rofi: Failed to open file: " + directory.encode()
+            + b"/\xef\xbf\xbd: No such file or directory\n",
+        )
 
 
 if __name__ == "__main__":

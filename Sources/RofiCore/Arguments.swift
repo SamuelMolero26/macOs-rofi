@@ -25,12 +25,18 @@ public struct Arguments: Sendable {
     /// `find_arg_str`: the argument after the first occurrence, or nil when
     /// that occurrence is argv[0] or the last argument.
     public func string(_ key: String) -> String? {
-        value(after: key).map { String(decoding: $0, as: UTF8.self) }
+        bytes(key).map { String(decoding: $0, as: UTF8.self) }
+    }
+
+    /// `find_arg_str` without decoding, for values used as C strings.
+    public func bytes(_ key: String) -> [UInt8]? {
+        guard let i = index(of: key), i > 0, i < rawArgv.count - 1 else { return nil }
+        return rawArgv[i + 1]
     }
 
     /// `find_arg_char`: the value parsed by `helper_parse_char`.
     public func char(_ key: String) -> UInt8? {
-        value(after: key).map(parseSeparator)
+        bytes(key).map(parseSeparator)
     }
 
     /// `find_arg_uint`: `strtoul` narrowed to an unsigned int, so garbage is 0
@@ -49,11 +55,6 @@ public struct Arguments: Sendable {
 
     private func index(of key: String) -> Int? {
         rawArgv.firstIndex { asciiCaseInsensitiveEqual($0, key) }
-    }
-
-    private func value(after key: String) -> [UInt8]? {
-        guard let i = index(of: key), i > 0, i < rawArgv.count - 1 else { return nil }
-        return rawArgv[i + 1]
     }
 }
 
