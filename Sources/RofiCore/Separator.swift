@@ -4,7 +4,10 @@ import Darwin
 /// `helper_parse_char` does (source/helper.c:383-429): a single character,
 /// a backslash escape, or `\xHH`. Anything else falls back to newline.
 public func parseSeparator(_ arg: String) -> UInt8 {
-    let bytes = Array(arg.utf8)
+    parseSeparator(Array(arg.utf8))
+}
+
+func parseSeparator(_ bytes: [UInt8]) -> UInt8 {
     let backslash = UInt8(ascii: "\\")
     if bytes.count == 1 {
         return bytes[0]
@@ -13,10 +16,11 @@ public func parseSeparator(_ arg: String) -> UInt8 {
         return escaped
     }
     if bytes.count > 2, bytes[0] == backslash, bytes[1] == UInt8(ascii: "x") {
-        return arg.withCString { pointer in
+        var cString = bytes.map { CChar(bitPattern: $0) } + [0]
+        return cString.withUnsafeMutableBufferPointer { buffer in
             // `strtol` supplies whitespace/sign/prefix handling and clamps
             // overflow; truncation retains the low byte of C's `char` cast.
-            UInt8(truncatingIfNeeded: strtol(pointer.advanced(by: 2), nil, 16))
+            UInt8(truncatingIfNeeded: strtol(buffer.baseAddress!.advanced(by: 2), nil, 16))
         }
     }
     return UInt8(ascii: "\n")

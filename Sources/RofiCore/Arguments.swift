@@ -4,9 +4,16 @@ import Foundation
 /// (source/helper.c:325-342, 373-380, 431-439). Like rofi, `argv` includes argv[0].
 public struct Arguments: Sendable {
     public let argv: [String]
+    private let rawArgv: [[UInt8]]
 
     public init(_ argv: [String]) {
-        self.argv = argv
+        self.init(rawArgv: argv.map { Array($0.utf8) })
+    }
+
+    /// Builds an argument list without requiring its C bytes to be valid UTF-8.
+    public init(rawArgv: [[UInt8]]) {
+        self.rawArgv = rawArgv
+        argv = rawArgv.map { String(decoding: $0, as: UTF8.self) }
     }
 
     /// `find_arg`: the first exact, ASCII case-insensitive match over every
@@ -18,13 +25,12 @@ public struct Arguments: Sendable {
     /// `find_arg_str`: the argument after the first occurrence, or nil when
     /// that occurrence is argv[0] or the last argument.
     public func string(_ key: String) -> String? {
-        guard let i = index(of: key), i > 0, i < argv.count - 1 else { return nil }
-        return argv[i + 1]
+        value(after: key).map { String(decoding: $0, as: UTF8.self) }
     }
 
     /// `find_arg_char`: the value parsed by `helper_parse_char`.
     public func char(_ key: String) -> UInt8? {
-        string(key).map(parseSeparator)
+        value(after: key).map(parseSeparator)
     }
 
     /// `find_arg_uint`: `strtoul` narrowed to an unsigned int, so garbage is 0
@@ -42,13 +48,18 @@ public struct Arguments: Sendable {
     }
 
     private func index(of key: String) -> Int? {
-        argv.firstIndex { asciiCaseInsensitiveEqual($0, key) }
+        rawArgv.firstIndex { asciiCaseInsensitiveEqual($0, key) }
+    }
+
+    private func value(after key: String) -> [UInt8]? {
+        guard let i = index(of: key), i > 0, i < rawArgv.count - 1 else { return nil }
+        return rawArgv[i + 1]
     }
 }
 
 /// `strcasecmp`: byte-wise, folding only ASCII letters.
-private func asciiCaseInsensitiveEqual(_ a: String, _ b: String) -> Bool {
-    a.utf8.elementsEqual(b.utf8) { lower($0) == lower($1) }
+private func asciiCaseInsensitiveEqual(_ a: [UInt8], _ b: String) -> Bool {
+    a.elementsEqual(b.utf8) { lower($0) == lower($1) }
 }
 
 private func lower(_ byte: UInt8) -> UInt8 {

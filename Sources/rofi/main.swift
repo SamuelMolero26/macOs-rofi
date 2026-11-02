@@ -27,7 +27,15 @@ func finish(_ completion: DmenuCompletion) -> Never {
     exit(completion.outcome.exitCode)
 }
 
-let args = Arguments(CommandLine.arguments)
+func rawCommandLineArguments() -> [[UInt8]] {
+    (0..<Int(CommandLine.argc)).map { index in
+        guard let pointer = CommandLine.unsafeArgv[index] else { return [] }
+        let bytes = UnsafeRawPointer(pointer).assumingMemoryBound(to: UInt8.self)
+        return Array(UnsafeBufferPointer(start: bytes, count: strlen(pointer)))
+    }
+}
+
+let args = Arguments(rawArgv: rawCommandLineArguments())
 
 // Script mode and the rest of the CLI arrive in later features.
 let invokedAsDmenu = args.argv.first?.split(separator: "/").last == "dmenu"

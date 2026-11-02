@@ -13,11 +13,11 @@ class CLIContractTests(unittest.TestCase):
         if not ROFI.is_file():
             raise RuntimeError(f"build the rofi executable before running {Path(__file__).name}")
 
-    def run_rofi(self, argv0, *arguments):
+    def run_rofi(self, argv0, *arguments, input=b""):
         return subprocess.run(
             [argv0, *arguments],
             executable=ROFI,
-            input=b"",
+            input=input,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             check=False,
@@ -48,6 +48,22 @@ class CLIContractTests(unittest.TestCase):
             b"rofi: config.matching=bogus is not a valid matching strategy.\n"
             b"Valid options are: glob, regex, fuzzy, prefix or normal.\n",
         )
+
+    def test_separator_preserves_a_non_utf8_argv_byte(self):
+        result = self.run_rofi(
+            b"rofi",
+            b"-dmenu",
+            b"-dump",
+            b"-sep",
+            b"\xff",
+            b"-format",
+            b"s",
+            input=b"alpha\xffbeta",
+        )
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, b"alpha\nbeta\n")
+        self.assertEqual(result.stderr, b"")
 
 
 if __name__ == "__main__":
