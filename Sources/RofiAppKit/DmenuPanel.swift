@@ -364,13 +364,17 @@ extension DmenuPanelController {
     /// A `-multi-select` toggle keeps the panel open, so the ballots, the
     /// moved selection and the count overlay are redrawn.
     fileprivate func acceptAlternate() {
+        let overlayBefore = session.selectionOverlay
         if let completion = session.acceptAlternate() {
             finish(completion)
             return
         }
         guard session.pipeline.multiSelect else { return }
         reloadMatches()
-        setOverlay(session.selectionOverlay)
+        // A refused toggle leaves the count unchanged and must not clear
+        // "Loading.. " mid-stream; upstream returns before touching the
+        // overlay (source/modes/dmenu.c:908-911).
+        if session.selectionOverlay != overlayBefore { setOverlay(session.selectionOverlay) }
     }
 }
 
