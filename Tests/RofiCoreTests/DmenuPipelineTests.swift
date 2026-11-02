@@ -32,4 +32,24 @@ import RofiCore
 
         #expect(pipeline.dump(rows: [Row(parsing: "entry")]) == ["[]\n"])
     }
+
+    // `-dump` and the interactive path share one shortcut block upstream
+    // (source/modes/dmenu.c:988-998), so they must never drift apart.
+    @Test(arguments: [[], ["-auto-select"], ["-only-match"], ["-no-custom"], ["-auto-select", "-only-match"]])
+    func dumpAndStartResolveTheSameShortcut(args: [String]) throws {
+        let pipeline = try pipeline(args)
+        let inputs: [[Row]] = [[], [Row(parsing: "only")], fruit]
+
+        for rows in inputs {
+            guard let shortcut = pipeline.shortcut(rows: rows) else { continue }
+
+            #expect(pipeline.dump(rows: rows) == (shortcut.output.map { [$0] } ?? []))
+
+            guard case .completed(let completion) = pipeline.start(rows: rows) else {
+                Issue.record("Expected the shortcut to bypass the session for \(args)")
+                continue
+            }
+            #expect(completion == shortcut)
+        }
+    }
 }

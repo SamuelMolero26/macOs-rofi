@@ -26,7 +26,7 @@ public struct DmenuSession: Sendable {
     private let pipeline: DmenuPipeline
     private let rows: [Row]
 
-    fileprivate init(pipeline: DmenuPipeline, rows: [Row], query: String) {
+    init(pipeline: DmenuPipeline, rows: [Row], query: String) {
         self.pipeline = pipeline
         self.rows = rows
         self.query = query
@@ -80,7 +80,7 @@ public struct DmenuSession: Sendable {
         return DmenuCompletion(output: nil, outcome: .cancelled)
     }
 
-    fileprivate func autoSelectCompletion() -> DmenuCompletion? {
+    func autoSelectCompletion() -> DmenuCompletion? {
         guard pipeline.autoSelect, matches.count == 1 else { return nil }
         return completion(for: matches[0])
     }
@@ -93,27 +93,7 @@ public struct DmenuSession: Sendable {
     }
 }
 
-public extension DmenuPipeline {
-    /// Applies dmenu's immediate shortcuts or creates pure interactive state.
-    func start(rows: [Row]) -> DmenuStart {
-        if autoSelect && rows.count == 1 {
-            let match = DmenuMatch(sourceIndex: 0, row: rows[0])
-            return .completed(DmenuCompletion(output: formattedOutput(for: match, filter: filter), outcome: .accepted))
-        }
-        if !allowsCustomInput && rows.isEmpty {
-            return .completed(DmenuCompletion(output: nil, outcome: .accepted))
-        }
-        let session = DmenuSession(pipeline: self, rows: rows, query: filter ?? "")
-        if let completion = session.autoSelectCompletion() {
-            return .completed(completion)
-        }
-        return .session(session)
-    }
-}
-
 fileprivate extension DmenuPipeline {
-    var allowsCustomInput: Bool { !onlyMatch && !noCustom }
-
     func formattedCustomOutput(for query: String) -> String {
         formatOutputLine(format, entry: query, index: -1, filter: query)
     }
