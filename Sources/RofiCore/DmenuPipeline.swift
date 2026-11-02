@@ -61,6 +61,12 @@ public struct DmenuPipeline: Sendable {
     /// Prefixes for toggled and untoggled rows under `-multi-select`.
     public var ballotSelected = "☑ "
     public var ballotUnselected = "☐ "
+    /// `-display-columns`: 1-based pieces of the display source to show, or
+    /// nil to show it whole.
+    public var displayColumns: [String]?
+    /// `-display-column-separator`: the case-insensitive regex that splits the
+    /// display source into columns.
+    public var displayColumnSeparator = "\t"
 
     /// The window title around `prompt` (source/view.c:1892-1894).
     public var windowTitle: String { "rofi - \(prompt)" }
@@ -125,6 +131,31 @@ public struct DmenuPipeline: Sendable {
         multiSelect = args.has("-multi-select")
         ballotSelected = args.string("-ballot-selected-str") ?? ballotSelected
         ballotUnselected = args.string("-ballot-unselected-str") ?? ballotUnselected
+        // The separator is only read with columns (source/modes/dmenu.c:659-664).
+        // g_strsplit splits "" into no items.
+        if let columns = args.string("-display-columns") {
+            displayColumns = columns.isEmpty ? [] : columns.components(separatedBy: ",")
+            displayColumnSeparator = args.string("-display-column-separator") ?? displayColumnSeparator
+        }
+    }
+
+    /// How a row is shown, before any ballot: its `display` extra or else its
+    /// text, projected onto `-display-columns`. A list position after the
+    /// first is joined by a tab even when the one before it was out of range
+    /// (source/modes/dmenu.c:365-411).
+    public func displayString(for row: Row) -> String {
+        let source = row.display ?? row.text
+        guard let displayColumns else { return source }
+        let pieces = splitColumns(source, separator: displayColumnSeparator)
+        var result = ""
+        for (i, item) in displayColumns.enumerated() {
+            // `(unsigned int)g_ascii_strtoull(item, NULL, 10)`.
+            let index = Int(UInt32(truncatingIfNeeded: strtoull(item, nil, 10)))
+            guard index > 0 && index <= pieces.count else { continue }
+            if i > 0 { result += "\t" }
+            result += pieces[index - 1]
+        }
+        return result
     }
 
     /// The source row selected when the dialog opens: the first row matching
@@ -220,6 +251,37 @@ private func parseMatching(_ value: String) throws -> MatchingMethod? {
         return method
     }
     return methods.first
+}
+
+/// `g_regex_split_simple(separator, string, G_REGEX_CASELESS, 0)`: empty pieces
+/// and capture groups are kept, an empty match splits between characters, ""
+/// splits into nothing, and an invalid pattern yields no pieces.
+// ponytail: ICU regex syntax stands in for PCRE, and an unmatched capture
+// group gives "" even after the last matched one, which GLib omits.
+private func splitColumns(_ string: String, separator: String) -> [String] {
+    guard !string.isEmpty,
+          let regex = try? NSRegularExpression(pattern: separator, options: .caseInsensitive) else { return [] }
+    let text = string as NSString
+    var pieces: [String] = []
+    var pieceStart = 0
+    var lastMatchWasEmpty = false
+    for match in regex.matches(in: string, range: NSRange(location: 0, length: text.length)) {
+        let range = match.range
+        // An empty match where the last piece ended splits nothing.
+        if range.length == 0 && range.location == pieceStart { continue }
+        pieces.append(text.substring(with: NSRange(location: pieceStart, length: range.location - pieceStart)))
+        for group in 1..<match.numberOfRanges {
+            let groupRange = match.range(at: group)
+            pieces.append(groupRange.location == NSNotFound ? "" : text.substring(with: groupRange))
+        }
+        pieceStart = NSMaxRange(range)
+        lastMatchWasEmpty = range.length == 0
+    }
+    // An empty match at the very end leaves no trailing piece.
+    if !(lastMatchWasEmpty && pieceStart == text.length) {
+        pieces.append(text.substring(from: pieceStart))
+    }
+    return pieces
 }
 
 /// Reads `fd` to the end and splits it into rows on `separator`.
