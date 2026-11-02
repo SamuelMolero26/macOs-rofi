@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "upstream": {
+    "url": "https://github.com/davatorium/rofi",
+    "revision": "1ad1df6b72d4c8b0e40e8ced1249ef8a8a6bc0ad",
+    "shortRevision": "1ad1df6b",
+    "version": "2.0.0-dev",
+    "oracleUsed": false,
+    "availableExecutable": "MacPorts rofi @1.7.4_0 (active)",
+    "oracleReason": "The available rofi executable reports 1.7.4 and is not the pinned source revision."
+  },
+  "contracts": [
+    {
+      "id": "argv.raw-bytes",
+      "swiftStatus": "gap",
+      "evidence": [
+        "source/rofi.c:988-989#main",
+        "source/helper.c:73-76#stored_argv",
+        "source/helper.c:97-100#cmd_set_arguments",
+        "source/helper.c:383-388#helper_parse_char"
+      ],
+      "cases": [
+        {
+          "argvBase64": ["cm9maQ==", "LWRtZW51", "LWR1bXA=", "LXNlcA==", "/w=="],
+          "expectedSeparatorByte": 255
+        }
+      ]
+    },
+    {
+      "id": "argv0.dmenu",
+      "swiftStatus": "gap",
+      "evidence": [
+        "source/rofi.c:1043-1056#main",
+        "doc/rofi-dmenu.5.markdown:37-45#dmenu-drop-in-replacement"
+      ],
+      "cases": [
+        {"argv0": "bin/dmenu", "startsDmenuMode": true},
+        {"argv0": "bin/Dmenu", "startsDmenuMode": false},
+        {"argv0": "rofi", "startsDmenuMode": false}
+      ]
+    },
+    {
+      "id": "dmenu.sync",
+      "swiftStatus": "supported",
+      "evidence": [
+        "source/modes/dmenu.c:533-542#dmenu_mode_init",
+        "source/modes/dmenu.c:639-657#dmenu_mode_init",
+        "doc/rofi-dmenu.5.markdown:170-177#sync"
+      ],
+      "cases": [
+        {
+          "syncForcingOptions": ["-sync", "-dump", "-select", "-no-custom", "-only-match", "-auto-select", "-selected-row"],
+          "readAllBeforeDialog": true
+        }
+      ]
+    },
+    {
+      "id": "matching.methods",
+      "swiftStatus": "mixed",
+      "evidence": [
+        "source/helper.c:57-64#MatchingMethodStr",
+        "source/helper.c:695-729#config_sanity_check",
+        "doc/rofi.1.markdown:368-384#matching"
+      ],
+      "cases": [
+        {
+          "names": ["normal", "regex", "glob", "fuzzy", "prefix"],
+          "asciiCaseInsensitive": true,
+          "recognizedNameErrorCount": 5,
+          "duplicatesCountTowardLimit": true,
+          "namesAfterLimitChecked": false
+        }
+      ]
+    },
+    {
+      "id": "parse-char.hex",
+      "swiftStatus": "mixed",
+      "evidence": [
+        "source/helper.c:383-428#helper_parse_char",
+        "test/helper-test.c:144-158#helper_parse_char-tests"
+      ],
+      "cases": [
+        {"argument": "\\x41", "expectedByte": 65, "swiftStatus": "supported"},
+        {"argument": "\\x 41", "expectedByte": 65, "swiftStatus": "gap"},
+        {"argument": "\\x+41", "expectedByte": 65, "swiftStatus": "gap"},
+        {"argument": "\\x-1", "expectedByte": 255, "swiftStatus": "gap"},
+        {"argument": "\\x0x41", "expectedByte": 65, "swiftStatus": "gap"},
+        {"argument": "\\x41zz", "expectedByte": 65, "swiftStatus": "supported"},
+        {"argument": "\\x100", "expectedByte": 0, "swiftStatus": "supported"},
+        {"argument": "\\x8000000000000000", "expectedByte": 255, "swiftStatus": "gap"}
+      ]
+    },
+    {
+      "id": "matching.negate-byte",
+      "swiftStatus": "mixed",
+      "evidence": [
+        "config/config.c:128-130#matching-defaults",
+        "config/config.c:165-165#matching_negate_char",
+        "source/helper.c:245-252#create_regex",
+        "doc/rofi.1.markdown:462-467#matching-negate-char"
+      ],
+      "cases": [
+        {"tokenBase64": "LWZvbw==", "negateByte": 45, "invert": true, "patternBase64": "Zm9v", "swiftStatus": "supported"},
+        {"tokenBase64": "LcyBZm9v", "negateByte": 45, "invert": true, "patternBase64": "zIFmb28=", "swiftStatus": "gap"}
+      ]
+    },
+    {
+      "id": "diagnostics.exit-dataerr",
+      "swiftStatus": "gap",
+      "evidence": [
+        "source/helper.c:671-729#config_sanity_check",
+        "source/rofi.c:840-858#show_error_dialog",
+        "source/rofi.c:879-885#startup",
+        "source/rofi.c:1306-1340#main",
+        "source/rofi.c:1380-1387#main"
+      ],
+      "cases": [
+        {"invalidMatchingWithDisplay": 65, "noDisplayBeforeValidation": 1, "macOSPolicy": 65}
+      ]
+    }
+  ]
+}
