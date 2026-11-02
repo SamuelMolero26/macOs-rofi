@@ -256,6 +256,59 @@ import RofiCore
 
         #expect(session.accept()?.output == "3:date:dat\n")
     }
+
+    // Contract: rofi_view_set_selected_line maps a source row to its visible
+    // position, or the first visible row when it is filtered out or out of
+    // range (source/view.c:369-383, source/modes/dmenu.c:1056).
+    @Test(arguments: [
+        ([], 2, 2),
+        (["-filter", "e"], 2, 1),    // visible rows are apple, cherry
+        (["-filter", "e"], 1, 0),    // Banana is filtered out
+        ([], 9, 0),                  // out of range
+    ] as [([String], Int, Int)])
+    func selectedRowSelectsItsVisiblePosition(flags: [String], row: Int, visible: Int) throws {
+        let session = try makeSession(flags + ["-selected-row", String(row)])
+
+        #expect(session.selectedVisibleIndex == visible)
+    }
+
+    @Test func selectChoosesTheFirstMatchingRowForAccept() throws {
+        let session = try makeSession(["-select", "rr", "-format", "i:s"])
+
+        #expect(session.selectedVisibleIndex == 2)
+        #expect(session.accept()?.output == "2:cherry\n")
+    }
+
+    @Test func queryUpdatesStillResetToTheFirstMatch() throws {
+        var session = try makeSession(["-selected-row", "2"])
+        #expect(session.updateQuery("a") == nil)
+
+        #expect(session.selectedVisibleIndex == 0)
+    }
+
+    // Contract: get_display_data ORs the -a/-u range membership with the row's
+    // own active/urgent extras (source/modes/dmenu.c:436-466).
+    @Test func activeAndUrgentCombineRangesWithRowExtras() throws {
+        var flagged = Row(parsing: "date")
+        flagged.urgent = true
+        let rows = fruit + [flagged]
+        let session = try makeSession(["-a", "0,2", "-u", "1"], rows: rows)
+
+        #expect(session.matches.map { session.state(of: $0) } == [
+            .active, .urgent, .active, .urgent,
+        ])
+    }
+
+    // Negative ranges resolve against the rows loaded so far, as upstream
+    // reads cmd_list_length on every redraw (source/modes/dmenu.c:441-443).
+    @Test func negativeRangesFollowAppendedRows() throws {
+        var session = try makeSession(["-a", "-1"])
+        #expect(session.matches.map { session.state(of: $0) } == [[], [], .active])
+
+        session.appendRows([Row(parsing: "date")])
+
+        #expect(session.matches.map { session.state(of: $0) } == [[], [], [], .active])
+    }
 }
 
 private extension DmenuStart {

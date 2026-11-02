@@ -9,6 +9,19 @@ public struct DmenuCompletion: Equatable, Sendable {
     }
 }
 
+/// The display state flags of one row, with upstream's values
+/// (include/widgets/textbox.h:103-112). Styling them is left to the UI.
+public struct DmenuRowState: OptionSet, Equatable, Sendable {
+    public let rawValue: Int
+
+    public init(rawValue: Int) {
+        self.rawValue = rawValue
+    }
+
+    public static let urgent = DmenuRowState(rawValue: 1)
+    public static let active = DmenuRowState(rawValue: 2)
+}
+
 /// A dmenu run either completes through a command-line shortcut or needs an
 /// interactive session.
 public enum DmenuStart: Sendable {
@@ -26,12 +39,30 @@ public struct DmenuSession: Sendable {
     public let pipeline: DmenuPipeline
     private var rows: [Row]
 
-    init(pipeline: DmenuPipeline, rows: [Row], query: String) {
+    /// Selects the visible position of `selectedRow`, or the first visible row
+    /// when it is nil, filtered out or out of range (source/view.c:369-383).
+    init(pipeline: DmenuPipeline, rows: [Row], query: String, selectedRow: Int? = nil) {
         self.pipeline = pipeline
         self.rows = rows
         self.query = query
         matches = pipeline.matchingRows(in: rows, query: query)
-        selectedVisibleIndex = matches.isEmpty ? nil : 0
+        let visible = matches.firstIndex { $0.sourceIndex == selectedRow }
+        selectedVisibleIndex = visible ?? (matches.isEmpty ? nil : 0)
+    }
+
+    /// How a visible row is drawn: `-a`/`-u` ranges resolved against the rows
+    /// loaded so far, ORed with the row's own extras
+    /// (source/modes/dmenu.c:436-466).
+    public func state(of match: DmenuMatch) -> DmenuRowState {
+        var state: DmenuRowState = []
+        let index = match.sourceIndex
+        if match.row.active || pipeline.activeRows.contains(where: { $0.contains(index, rowCount: rows.count) }) {
+            state.insert(.active)
+        }
+        if match.row.urgent || pipeline.urgentRows.contains(where: { $0.contains(index, rowCount: rows.count) }) {
+            state.insert(.urgent)
+        }
+        return state
     }
 
     public mutating func updateQuery(_ query: String) -> DmenuCompletion? {
