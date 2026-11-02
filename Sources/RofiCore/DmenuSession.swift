@@ -73,15 +73,14 @@ public struct DmenuSession: Sendable {
         }
     }
 
-    /// A selectable row wins over custom input. Otherwise the live query is
-    /// accepted as custom input when policy allows it (source/modes/dmenu.c:780-891).
+    /// A valid selection wins over custom input, but a nonselectable row rejects
+    /// acceptance. With no valid selection, the live query can be custom input.
     public func accept() -> DmenuCompletion? {
         if let selectedVisibleIndex,
            matches.indices.contains(selectedVisibleIndex) {
             let match = matches[selectedVisibleIndex]
-            if !match.row.nonselectable {
-                return completion(for: match)
-            }
+            guard !match.row.nonselectable else { return nil }
+            return completion(for: match)
         }
         guard pipeline.allowsCustomInput else { return nil }
         return DmenuCompletion(output: pipeline.formattedCustomOutput(for: query), outcome: .accepted)
