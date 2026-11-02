@@ -48,6 +48,10 @@ import os
             }
         }
     }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        controller.focus()
+    }
 }
 
 @MainActor private final class DmenuPanelController: NSObject {
@@ -219,6 +223,7 @@ import os
         let rowHeight = tableView.rowHeight + tableView.intercellSpacing.height
         contentView.addSubview(promptLabel)
         contentView.addSubview(searchField)
+        panel.initialFirstResponder = searchField
         contentView.addSubview(scrollView)
         contentView.addSubview(loadingLabel)
         var resultsTop = searchField.bottomAnchor
