@@ -1,4 +1,4 @@
-import Darwin
+import Foundation
 
 /// `-matching` named a method rofi does not know (source/helper.c:726-731).
 public struct InvalidMatchingMethod: Error, Equatable, CustomStringConvertible {
@@ -36,6 +36,41 @@ public struct DmenuPipeline: Sendable {
     public var onlyMatch = false
     /// Disables custom input but preserves normal cancellation.
     public var noCustom = false
+    /// Rows arrive while the panel is open instead of being read up front.
+    public var isAsync = true
+    /// Upstream's `display_name`: one string names both the prompt and the
+    /// window, so `-p` and `-window-title` each change both.
+    public var prompt = "dmenu"
+    /// Shown raw, unlike upstream's Pango markup (source/view.c:1762).
+    public var message: String?
+    /// Visible result rows, or nil to keep the default panel size.
+    public var lines: Int?
+    /// `-b`: bottom center, not dmenu's full-width bar.
+    public var atBottom = false
+    /// `-selected-row`: the source row selected at start, or nil for the first
+    /// visible row.
+    public var selectedRow: Int?
+    /// `-select`: a query whose first matching row is selected at start.
+    public var select: String?
+    /// `-a`: rows drawn as active.
+    public var activeRows: [RowRange] = []
+    /// `-u`: rows drawn as urgent.
+    public var urgentRows: [RowRange] = []
+    /// `-multi-select`: Shift+Return toggles rows, and accepting prints them all.
+    public var multiSelect = false
+    /// Prefixes for toggled and untoggled rows under `-multi-select`.
+    public var ballotSelected = "☑ "
+    public var ballotUnselected = "☐ "
+
+    /// The window title around `prompt` (source/view.c:1892-1894).
+    public var windowTitle: String { "rofi - \(prompt)" }
+
+    /// Rows the panel is sized around, or nil for the default panel. A message
+    /// adds to the window, so it must not take from the default rows
+    /// (source/xcb/view.c:896-897).
+    public var fixedRows: Int? {
+        lines ?? (message == nil ? nil : Int(defaultMenuLines))
+    }
 
     /// `-only-match` and `-no-custom` both disable custom input
     /// (source/modes/dmenu.c:605-608).
@@ -64,6 +99,46 @@ public struct DmenuPipeline: Sendable {
         autoSelect = args.bool("auto-select", default: autoSelect)
         onlyMatch = args.has("-only-match")
         noCustom = args.has("-no-custom")
+        // These only work in sync mode (source/modes/dmenu.c:536-542).
+        isAsync = !autoSelect && !["-sync", "-dump", "-select", "-no-custom", "-only-match", "-selected-row"]
+            .contains(where: args.has)
+        // `-p` is read last, so it wins (source/modes/dmenu.c:591-595, 1035).
+        prompt = args.string("-p") ?? args.string("-window-title") ?? prompt
+        message = args.string("-mesg")
+        // The default overrides nothing, so it counts as unset, and the theme
+        // value is a signed int (source/modes/dmenu.c:575-590). A negative
+        // height is meaningless here, so it shows no rows like `-l 0`.
+        if let value = args.uint("-l"), value != defaultMenuLines {
+            lines = max(0, Int(Int32(truncatingIfNeeded: value)))
+        }
+        atBottom = args.has("-b")
+        // UINT32_MAX is upstream's "no row" default, so a value that wraps to
+        // it selects nothing (source/modes/dmenu.c:548, 555).
+        if let row = args.uint("-selected-row"), row != UInt32.max {
+            selectedRow = Int(row)
+        }
+        select = args.string("-select")
+        // Contract: source/modes/dmenu.c:561-572.
+        activeRows = args.string("-a").map(parseRowRanges) ?? []
+        urgentRows = args.string("-u").map(parseRowRanges) ?? []
+        // Contract: source/modes/dmenu.c:543-545 and 981-984.
+        multiSelect = args.has("-multi-select")
+        ballotSelected = args.string("-ballot-selected-str") ?? ballotSelected
+        ballotUnselected = args.string("-ballot-unselected-str") ?? ballotUnselected
+    }
+
+    /// The source row selected when the dialog opens: the first row matching
+    /// `-select` with the configured matching, else `-selected-row`
+    /// (source/modes/dmenu.c:1005-1017). Both force sync input, so `rows` is
+    /// the whole input.
+    public func initialSelection(in rows: [Row]) -> Int? {
+        if let select {
+            let matcher = Matcher(query: select, options: match)
+            if let row = rows.firstIndex(where: { matcher.matches($0.text) }) {
+                return row
+            }
+        }
+        return selectedRow
     }
 
     /// Matches row text while retaining each row's original input position.
@@ -114,7 +189,12 @@ public struct DmenuPipeline: Sendable {
     /// Applies dmenu's immediate shortcuts or creates pure interactive state.
     public func start(rows: [Row]) -> DmenuStart {
         if let completion = shortcut(rows: rows) { return .completed(completion) }
-        let session = DmenuSession(pipeline: self, rows: rows, query: filter ?? "")
+        let session = DmenuSession(
+            pipeline: self,
+            rows: rows,
+            query: filter ?? "",
+            selectedRow: initialSelection(in: rows)
+        )
         if let completion = session.autoSelectCompletion() { return .completed(completion) }
         return .session(session)
     }
@@ -123,6 +203,9 @@ public struct DmenuPipeline: Sendable {
 
 /// Source compatibility for the first no-UI dmenu implementation.
 public typealias DmenuDump = DmenuPipeline
+
+/// `DEFAULT_MENU_LINES` (include/settings.h:231).
+private let defaultMenuLines: UInt32 = 15
 
 /// `config.matching`: every comma-separated name must be valid (ASCII case
 /// ignored); the first one is used (source/helper.c:695-731). `""` splits
@@ -140,17 +223,41 @@ private func parseMatching(_ value: String) throws -> MatchingMethod? {
 }
 
 /// Reads `fd` to the end and splits it into rows on `separator`.
-// ponytail: a read error other than EINTR ends the input silently.
 public func readRows(fileDescriptor fd: Int32, separator: UInt8) -> [Row] {
-    var splitter = RowSplitter(separator: separator)
     var rows: [Row] = []
+    readRowBatches(fileDescriptor: fd, separator: separator) { rows += $0 }
+    return rows
+}
+
+/// Opens and reads the input on a background thread, calling `onRows` from it
+/// with each non-empty batch, then `onEnd` once at end of input. Returns
+/// without waiting for `open`, which blocks on a FIFO with no writer.
+// ponytail: a partial line waits for its separator or EOF; rofi flushes it
+// after 250 ms (source/modes/dmenu.c:275), which splits slow lines.
+public func streamRows(
+    open: @escaping @Sendable () -> Int32,
+    separator: UInt8,
+    onRows: @escaping @Sendable ([Row]) -> Void,
+    onEnd: @escaping @Sendable () -> Void
+) {
+    Thread.detachNewThread {
+        readRowBatches(fileDescriptor: open(), separator: separator, onRows)
+        onEnd()
+    }
+}
+
+/// The read loop behind `readRows` and `streamRows`: hands over each read's
+/// completed rows, then the unterminated remainder at end of input.
+// ponytail: a read error other than EINTR ends the input silently.
+func readRowBatches(fileDescriptor fd: Int32, separator: UInt8, _ onRows: ([Row]) -> Void) {
+    var splitter = RowSplitter(separator: separator)
     var buffer = [UInt8](repeating: 0, count: 64 * 1024)
     while true {
         let count = buffer.withUnsafeMutableBytes { read(fd, $0.baseAddress, $0.count) }
         if count < 0 && errno == EINTR { continue }
         if count <= 0 { break }
-        rows += splitter.feed(buffer[..<count])
+        let rows = splitter.feed(buffer[..<count])
+        if !rows.isEmpty { onRows(rows) }
     }
-    if let last = splitter.finish() { rows.append(last) }
-    return rows
+    if let last = splitter.finish() { onRows([last]) }
 }

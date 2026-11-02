@@ -188,6 +188,280 @@ import RofiCore
         #expect(completion.outcome == .accepted)
         #expect(completion.outcome.exitCode == 0)
     }
+
+    @Test func appendedMatchesContinueSourceIndicesAndFilterByTheLiveQuery() throws {
+        let pipeline = try pipeline(["-i"])
+        guard case .session(var session) = pipeline.start(rows: fruit) else {
+            Issue.record("Expected an interactive dmenu session")
+            return
+        }
+        #expect(session.updateQuery("an") == nil)
+
+        session.appendRows(["mango", "kiwi", "orange"].map { Row(parsing: $0) })
+
+        #expect(session.matches.map(\.sourceIndex) == [1, 3, 5])
+        #expect(session.matches.map(\.row.text) == ["Banana", "mango", "orange"])
+    }
+
+    @Test func appendKeepsTheCurrentSelection() throws {
+        let pipeline = try pipeline()
+        guard case .session(var session) = pipeline.start(rows: fruit) else {
+            Issue.record("Expected an interactive dmenu session")
+            return
+        }
+        session.selectVisibleIndex(1)
+
+        session.appendRows([Row(parsing: "date")])
+
+        #expect(session.selectedVisibleIndex == 1)
+    }
+
+    @Test func appendSelectsTheFirstMatchOnceOneExists() throws {
+        let pipeline = try pipeline(["-filter", "an"])
+        guard case .session(var session) = pipeline.start(rows: []) else {
+            Issue.record("Expected an interactive dmenu session")
+            return
+        }
+        #expect(session.selectedVisibleIndex == nil)
+
+        session.appendRows([Row(parsing: "apple")])
+        #expect(session.selectedVisibleIndex == nil)
+
+        session.appendRows([Row(parsing: "Banana")])
+        #expect(session.matches.map(\.sourceIndex) == [1])
+        #expect(session.selectedVisibleIndex == 0)
+    }
+
+    @Test func queryUpdateRematchesEveryAppendedRow() throws {
+        let pipeline = try pipeline(["-filter", "an"])
+        guard case .session(var session) = pipeline.start(rows: []) else {
+            Issue.record("Expected an interactive dmenu session")
+            return
+        }
+        session.appendRows(fruit)
+
+        #expect(session.updateQuery("") == nil)
+
+        #expect(session.matches.map(\.sourceIndex) == [0, 1, 2])
+    }
+
+    @Test func acceptOfAnAppendedRowFormatsItsOriginalIndex() throws {
+        let pipeline = try pipeline(["-format", "i:s:f"])
+        guard case .session(var session) = pipeline.start(rows: fruit) else {
+            Issue.record("Expected an interactive dmenu session")
+            return
+        }
+        session.appendRows([Row(parsing: "date")])
+        #expect(session.updateQuery("dat") == nil)
+
+        #expect(session.accept()?.output == "3:date:dat\n")
+    }
+
+    // Contract: rofi_view_set_selected_line maps a source row to its visible
+    // position, or the first visible row when it is filtered out or out of
+    // range (source/view.c:369-383, source/modes/dmenu.c:1056).
+    @Test(arguments: [
+        ([], 2, 2),
+        (["-filter", "e"], 2, 1),    // visible rows are apple, cherry
+        (["-filter", "e"], 1, 0),    // Banana is filtered out
+        ([], 9, 0),                  // out of range
+    ] as [([String], Int, Int)])
+    func selectedRowSelectsItsVisiblePosition(flags: [String], row: Int, visible: Int) throws {
+        let session = try makeSession(flags + ["-selected-row", String(row)])
+
+        #expect(session.selectedVisibleIndex == visible)
+    }
+
+    @Test func selectChoosesTheFirstMatchingRowForAccept() throws {
+        let session = try makeSession(["-select", "rr", "-format", "i:s"])
+
+        #expect(session.selectedVisibleIndex == 2)
+        #expect(session.accept()?.output == "2:cherry\n")
+    }
+
+    @Test func queryUpdatesStillResetToTheFirstMatch() throws {
+        var session = try makeSession(["-selected-row", "2"])
+        #expect(session.updateQuery("a") == nil)
+
+        #expect(session.selectedVisibleIndex == 0)
+    }
+
+    // Contract: get_display_data ORs the -a/-u range membership with the row's
+    // own active/urgent extras (source/modes/dmenu.c:436-466).
+    @Test func activeAndUrgentCombineRangesWithRowExtras() throws {
+        var flagged = Row(parsing: "date")
+        flagged.urgent = true
+        let rows = fruit + [flagged]
+        let session = try makeSession(["-a", "0,2", "-u", "1"], rows: rows)
+
+        #expect(session.matches.map { session.state(of: $0) } == [
+            .active, .urgent, .active, .urgent,
+        ])
+    }
+
+    // Negative ranges resolve against the rows loaded so far, as upstream
+    // reads cmd_list_length on every redraw (source/modes/dmenu.c:441-443).
+    @Test func negativeRangesFollowAppendedRows() throws {
+        var session = try makeSession(["-a", "-1"])
+        #expect(session.matches.map { session.state(of: $0) } == [[], [], .active])
+
+        session.appendRows([Row(parsing: "date")])
+
+        #expect(session.matches.map { session.state(of: $0) } == [[], [], [], .active])
+    }
+
+    // MARK: -multi-select, kb-accept-alt (Shift+Return, source/keyb.c:127-130)
+    // in dmenu_finalize (source/modes/dmenu.c:833-952).
+
+    @Test func rowsShowTheirTextWithoutMultiSelect() throws {
+        let session = try makeSession()
+
+        #expect(session.matches.map { session.displayText(for: $0) } == ["apple", "Banana", "cherry"])
+    }
+
+    // Contract: dmenu_format_output_string (source/modes/dmenu.c:365-376).
+    @Test func multiSelectPrefixesEveryRowWithItsBallot() throws {
+        var session = try makeSession(["-multi-select", "-ballot-selected-str", "[x] "])
+        #expect(session.acceptAlternate() == nil)
+
+        #expect(session.matches.map { session.displayText(for: $0) } == ["[x] apple", "☐ Banana", "☐ cherry"])
+    }
+
+    @Test func toggleMovesToTheNextVisibleRowAndStopsAtTheLast() throws {
+        var session = try makeSession(["-multi-select"])
+        #expect(session.acceptAlternate() == nil)
+        #expect(session.selectedVisibleIndex == 1)
+
+        session.selectVisibleIndex(2)
+        #expect(session.acceptAlternate() == nil)
+
+        #expect(session.selectedVisibleIndex == 2)
+        #expect(session.matches.map { session.state(of: $0) } == [.selected, [], .selected])
+    }
+
+    // The overlay counts toggled rows against every loaded row
+    // (source/modes/dmenu.c:936-943).
+    @Test func toggleCountsSelectionsInTheOverlayAndUntoggles() throws {
+        var session = try makeSession(["-multi-select"])
+        #expect(session.selectionOverlay == nil)
+
+        #expect(session.acceptAlternate() == nil)
+        #expect(session.selectionOverlay == "1/3")
+        #expect(session.acceptAlternate() == nil)
+        #expect(session.selectionOverlay == "2/3")
+
+        session.selectVisibleIndex(0)
+        #expect(session.acceptAlternate() == nil)
+
+        #expect(session.selectionOverlay == "1/3")
+        #expect(session.matches.map { session.state(of: $0) } == [[], .selected, []])
+        session.selectVisibleIndex(1)
+        #expect(session.acceptAlternate() == nil)
+        #expect(session.selectionOverlay == nil)
+    }
+
+    // Contract: dmenu_print_results prints every toggled row in input order,
+    // whatever is highlighted, and only falls back to the highlighted row or
+    // custom input when nothing is toggled (source/modes/dmenu.c:808-826).
+    @Test func acceptPrintsToggledRowsInInputOrder() throws {
+        var session = try makeSession(["-multi-select", "-format", "i:s:f"])
+        session.selectVisibleIndex(2)
+        #expect(session.acceptAlternate() == nil)
+        session.selectVisibleIndex(0)
+        #expect(session.acceptAlternate() == nil)
+        #expect(session.updateQuery("an") == nil)
+
+        #expect(session.accept() == DmenuCompletion(output: "0:apple:an\n2:cherry:an\n", outcome: .accepted))
+    }
+
+    @Test func customInputPrintsToggledRowsInstead() throws {
+        var session = try makeSession(["-multi-select", "-format", "s:f"])
+        #expect(session.acceptAlternate() == nil)
+        #expect(session.updateQuery("zzz") == nil)
+
+        #expect(session.accept()?.output == "apple:zzz\n")
+        #expect(session.acceptAlternate()?.output == "apple:zzz\n")
+    }
+
+    @Test func untoggledRowsFallBackToTheHighlightedRow() throws {
+        var session = try makeSession(["-multi-select", "-format", "i:s"])
+        #expect(session.acceptAlternate() == nil)
+        session.selectVisibleIndex(0)
+        #expect(session.acceptAlternate() == nil)
+
+        #expect(session.accept()?.output == "1:Banana\n")
+    }
+
+    // Without -multi-select, Shift+Return prints like Return
+    // (source/modes/dmenu.c:880-892, 944-946).
+    @Test(arguments: [[], ["-no-custom"]])
+    func acceptAlternateWithoutMultiSelectAccepts(flags: [String]) throws {
+        var session = try makeSession(flags + ["-format", "i:s"])
+        session.selectVisibleIndex(1)
+
+        #expect(session.acceptAlternate() == DmenuCompletion(output: "1:Banana\n", outcome: .accepted))
+        #expect(session.selectionOverlay == nil)
+    }
+
+    @Test func acceptAlternateWithNoMatchIsCustomInput() throws {
+        var session = try makeSession(["-multi-select", "-format", "i:s"])
+        #expect(session.updateQuery("zzz") == nil)
+
+        #expect(session.acceptAlternate()?.output == "-1:zzz\n")
+    }
+
+    @Test func noCustomAcceptAlternateWithNoMatchKeepsTheSessionOpen() throws {
+        var session = try makeSession(["-multi-select", "-no-custom"])
+        #expect(session.updateQuery("zzz") == nil)
+
+        #expect(session.acceptAlternate() == nil)
+        #expect(session.selectionOverlay == nil)
+    }
+
+    // The #21 rule: Return on a highlighted nonselectable row prints nothing,
+    // even with toggled rows (source/modes/dmenu.c:910-916).
+    @Test func nonselectableHighlightBlocksAcceptAndToggle() throws {
+        var heading = Row(parsing: "heading")
+        heading.nonselectable = true
+        var session = try makeSession(["-multi-select"], rows: [Row(parsing: "apple"), heading])
+        #expect(session.acceptAlternate() == nil)
+        #expect(session.selectedVisibleIndex == 1)
+
+        #expect(session.acceptAlternate() == nil)
+        #expect(session.accept() == nil)
+        #expect(session.selectionOverlay == "1/2")
+        #expect(session.matches.map { session.state(of: $0) } == [.selected, []])
+    }
+
+    // Upstream's -no-custom/-only-match branch toggles before it checks
+    // nonselectable (source/modes/dmenu.c:853 before 883).
+    @Test(arguments: ["-no-custom", "-only-match"])
+    func customDisabledModesToggleNonselectableRows(flag: String) throws {
+        var heading = Row(parsing: "heading")
+        heading.nonselectable = true
+        var session = try makeSession(["-multi-select", flag, "-format", "s"], rows: [heading, Row(parsing: "apple")])
+
+        #expect(session.acceptAlternate() == nil)
+
+        #expect(session.selectionOverlay == "1/2")
+        #expect(session.selectedVisibleIndex == 1)
+        // Return still refuses a highlighted nonselectable row.
+        session.selectVisibleIndex(0)
+        #expect(session.accept() == nil)
+        session.selectVisibleIndex(1)
+        #expect(session.accept()?.output == "heading\n")
+    }
+
+    @Test func togglesSurviveAppendedRows() throws {
+        var session = try makeSession(["-multi-select", "-format", "i"])
+        #expect(session.acceptAlternate() == nil)
+        session.appendRows([Row(parsing: "date")])
+        session.selectVisibleIndex(3)
+        #expect(session.acceptAlternate() == nil)
+
+        #expect(session.selectionOverlay == "2/4")
+        #expect(session.accept()?.output == "0\n3\n")
+    }
 }
 
 private extension DmenuStart {
