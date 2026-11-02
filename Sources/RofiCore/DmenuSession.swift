@@ -24,7 +24,7 @@ public struct DmenuSession: Sendable {
     public private(set) var selectedVisibleIndex: Int?
 
     private let pipeline: DmenuPipeline
-    private let rows: [Row]
+    private var rows: [Row]
 
     init(pipeline: DmenuPipeline, rows: [Row], query: String) {
         self.pipeline = pipeline
@@ -39,6 +39,19 @@ public struct DmenuSession: Sendable {
         matches = pipeline.matchingRows(in: rows, query: query)
         selectedVisibleIndex = matches.isEmpty ? nil : 0
         return autoSelectCompletion()
+    }
+
+    /// Adds rows that arrived after the session started. New matches go last,
+    /// so visible indices and the selection stay valid.
+    public mutating func appendRows(_ newRows: [Row]) {
+        let offset = rows.count
+        rows += newRows
+        matches += pipeline.matchingRows(in: newRows, query: query).map {
+            DmenuMatch(sourceIndex: offset + $0.sourceIndex, row: $0.row)
+        }
+        if selectedVisibleIndex == nil && !matches.isEmpty {
+            selectedVisibleIndex = 0
+        }
     }
 
     public mutating func selectVisibleIndex(_ index: Int?) {

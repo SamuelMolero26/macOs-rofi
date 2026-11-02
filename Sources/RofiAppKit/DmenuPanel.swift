@@ -1,14 +1,19 @@
 import AppKit
 import Dispatch
 import RofiCore
+import os
 
-/// Runs one synchronous dmenu interaction on the main actor.
-@MainActor public func runDmenuPanel(session: DmenuSession) -> DmenuCompletion {
+/// Runs one synchronous dmenu interaction on the main actor. With `input`,
+/// the panel opens at once and rows stream in from what `open` returns.
+@MainActor public func runDmenuPanel(
+    session: DmenuSession,
+    streaming input: (open: @Sendable () -> Int32, separator: UInt8)?
+) -> DmenuCompletion {
     let application = NSApplication.shared
     // Regular policy reliably registers this unbundled CLI for activation.
     application.setActivationPolicy(.regular)
 
-    let controller = DmenuPanelController(session: session)
+    let controller = DmenuPanelController(session: session, input: input)
     let applicationDelegate = DmenuApplicationDelegate(controller: controller)
     application.delegate = applicationDelegate
     withExtendedLifetime(applicationDelegate) {
@@ -31,6 +36,7 @@ import RofiCore
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         controller.present()
+        controller.startStreaming()
         NSApplication.shared.activate(ignoringOtherApps: true)
         DispatchQueue.main.async { @MainActor [controller] in
             // Return to accessory mode to avoid persistent Dock and menu presence.
@@ -60,16 +66,27 @@ import RofiCore
         static let cell = NSUserInterfaceItemIdentifier("dmenu-cell")
     }
 
+    /// What the reader thread has delivered and the main queue has not drained.
+    private struct PendingInput: Sendable {
+        var rows: [Row] = []
+        var ended = false
+        var drainScheduled = false
+    }
+
     private var session: DmenuSession
+    private let input: (open: @Sendable () -> Int32, separator: UInt8)?
+    private let pendingInput = OSAllocatedUnfairLock(initialState: PendingInput())
     private let panel: DmenuPanel
     private let searchField = NSSearchField()
     private let tableView = DmenuTableView()
     private let scrollView = NSScrollView()
+    private let loadingLabel = NSTextField(labelWithString: "Loading.. ")
     private var suppressTableSelectionChanges = false
     private(set) var completion: DmenuCompletion?
 
-    init(session: DmenuSession) {
+    init(session: DmenuSession, input: (open: @Sendable () -> Int32, separator: UInt8)?) {
         self.session = session
+        self.input = input
         panel = DmenuPanel(
             contentRect: NSRect(origin: .zero, size: Layout.panelSize),
             styleMask: [.borderless],
@@ -80,6 +97,7 @@ import RofiCore
         configurePanel()
         configureSearchField()
         configureTable()
+        configureLoadingLabel()
         configureLayout()
         reloadMatches()
     }
@@ -87,6 +105,16 @@ import RofiCore
     func present() {
         panel.center()
         panel.orderFrontRegardless()
+    }
+
+    func startStreaming() {
+        guard let input else { return }
+        streamRows(
+            open: input.open,
+            separator: input.separator,
+            onRows: { [self] in enqueueInput(rows: $0) },
+            onEnd: { [self] in enqueueInput(ended: true) }
+        )
     }
 
     func focus() {
@@ -120,7 +148,8 @@ import RofiCore
         tableView.addTableColumn(column)
         tableView.headerView = nil
         tableView.allowsMultipleSelection = false
-        tableView.allowsEmptySelection = true
+        // Like upstream, a visible row stays selected, so Return is predictable.
+        tableView.allowsEmptySelection = false
         tableView.setAccessibilityLabel("Dmenu results")
         tableView.dataSource = self
         tableView.delegate = self
@@ -131,12 +160,26 @@ import RofiCore
         scrollView.translatesAutoresizingMaskIntoConstraints = false
     }
 
+    /// Upstream's overlay (source/modes/dmenu.c:1059), drawn over the results.
+    private func configureLoadingLabel() {
+        loadingLabel.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        loadingLabel.textColor = .secondaryLabelColor
+        loadingLabel.drawsBackground = true
+        loadingLabel.backgroundColor = .windowBackgroundColor
+        loadingLabel.setAccessibilityLabel("Dmenu loading")
+        loadingLabel.isHidden = input == nil
+        loadingLabel.translatesAutoresizingMaskIntoConstraints = false
+    }
+
     private func configureLayout() {
         guard let contentView = panel.contentView else { return }
         contentView.addSubview(searchField)
         panel.initialFirstResponder = searchField
         contentView.addSubview(scrollView)
+        contentView.addSubview(loadingLabel)
         NSLayoutConstraint.activate([
+            loadingLabel.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
+            loadingLabel.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor),
             searchField.topAnchor.constraint(equalTo: contentView.topAnchor, constant: Layout.inset),
             searchField.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: Layout.inset),
             searchField.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -Layout.inset),
@@ -145,6 +188,37 @@ import RofiCore
             scrollView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -Layout.inset),
             scrollView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -Layout.inset),
         ])
+    }
+
+    /// Runs on the reader thread. Batches coalesce into one outstanding drain.
+    private nonisolated func enqueueInput(rows: [Row] = [], ended: Bool = false) {
+        let needsDrain = pendingInput.withLock { pending in
+            pending.rows += rows
+            pending.ended = pending.ended || ended
+            defer { pending.drainScheduled = true }
+            return !pending.drainScheduled
+        }
+        guard needsDrain else { return }
+        DispatchQueue.main.async { @MainActor [self] in drainInput() }
+    }
+
+    /// Inserts instead of reloading so scrolling and the search field are left
+    /// alone, which keeps typing and IME composition undisturbed.
+    private func drainInput() {
+        let pending = pendingInput.withLock { pending in
+            defer { pending = PendingInput() }
+            return pending
+        }
+        let firstNewRow = tableView.numberOfRows
+        let selection = session.selectedVisibleIndex
+        session.appendRows(pending.rows)
+        tableView.insertRows(at: IndexSet(firstNewRow..<session.matches.count), withAnimation: [])
+        if session.selectedVisibleIndex != selection {
+            syncSelection()
+        }
+        if pending.ended {
+            loadingLabel.isHidden = true
+        }
     }
 
     private func reloadMatches() {

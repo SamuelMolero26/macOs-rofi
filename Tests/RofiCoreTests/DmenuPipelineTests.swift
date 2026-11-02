@@ -33,6 +33,19 @@ import RofiCore
         #expect(pipeline.dump(rows: [Row(parsing: "entry")]) == ["[]\n"])
     }
 
+    // Contract: source/modes/dmenu.c:533-542.
+    @Test func inputIsAsyncByDefault() throws {
+        #expect(try pipeline().isAsync)
+    }
+
+    @Test(arguments: [
+        ["-sync"], ["-dump"], ["-select", "a"], ["-no-custom"], ["-only-match"],
+        ["-selected-row", "1"], ["-auto-select"],
+    ])
+    func forcingFlagsMakeInputSync(flags: [String]) throws {
+        #expect(try !pipeline(flags).isAsync)
+    }
+
     // `-dump` and the interactive path share one shortcut block upstream
     // (source/modes/dmenu.c:988-998), so they must never drift apart.
     @Test(arguments: [[], ["-auto-select"], ["-only-match"], ["-no-custom"], ["-auto-select", "-only-match"]])

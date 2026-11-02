@@ -1,4 +1,4 @@
-import Darwin
+import Foundation
 
 /// `-matching` named a method rofi does not know (source/helper.c:726-731).
 public struct InvalidMatchingMethod: Error, Equatable, CustomStringConvertible {
@@ -36,6 +36,8 @@ public struct DmenuPipeline: Sendable {
     public var onlyMatch = false
     /// Disables custom input but preserves normal cancellation.
     public var noCustom = false
+    /// Rows arrive while the panel is open instead of being read up front.
+    public var isAsync = true
 
     /// `-only-match` and `-no-custom` both disable custom input
     /// (source/modes/dmenu.c:605-608).
@@ -64,6 +66,9 @@ public struct DmenuPipeline: Sendable {
         autoSelect = args.bool("auto-select", default: autoSelect)
         onlyMatch = args.has("-only-match")
         noCustom = args.has("-no-custom")
+        // These only work in sync mode (source/modes/dmenu.c:536-542).
+        isAsync = !autoSelect && !["-sync", "-dump", "-select", "-no-custom", "-only-match", "-selected-row"]
+            .contains(where: args.has)
     }
 
     /// Matches row text while retaining each row's original input position.
@@ -140,17 +145,41 @@ private func parseMatching(_ value: String) throws -> MatchingMethod? {
 }
 
 /// Reads `fd` to the end and splits it into rows on `separator`.
-// ponytail: a read error other than EINTR ends the input silently.
 public func readRows(fileDescriptor fd: Int32, separator: UInt8) -> [Row] {
-    var splitter = RowSplitter(separator: separator)
     var rows: [Row] = []
+    readRowBatches(fileDescriptor: fd, separator: separator) { rows += $0 }
+    return rows
+}
+
+/// Opens and reads the input on a background thread, calling `onRows` from it
+/// with each non-empty batch, then `onEnd` once at end of input. Returns
+/// without waiting for `open`, which blocks on a FIFO with no writer.
+// ponytail: a partial line waits for its separator or EOF; rofi flushes it
+// after 250 ms (source/modes/dmenu.c:275), which splits slow lines.
+public func streamRows(
+    open: @escaping @Sendable () -> Int32,
+    separator: UInt8,
+    onRows: @escaping @Sendable ([Row]) -> Void,
+    onEnd: @escaping @Sendable () -> Void
+) {
+    Thread.detachNewThread {
+        readRowBatches(fileDescriptor: open(), separator: separator, onRows)
+        onEnd()
+    }
+}
+
+/// The read loop behind `readRows` and `streamRows`: hands over each read's
+/// completed rows, then the unterminated remainder at end of input.
+// ponytail: a read error other than EINTR ends the input silently.
+func readRowBatches(fileDescriptor fd: Int32, separator: UInt8, _ onRows: ([Row]) -> Void) {
+    var splitter = RowSplitter(separator: separator)
     var buffer = [UInt8](repeating: 0, count: 64 * 1024)
     while true {
         let count = buffer.withUnsafeMutableBytes { read(fd, $0.baseAddress, $0.count) }
         if count < 0 && errno == EINTR { continue }
         if count <= 0 { break }
-        rows += splitter.feed(buffer[..<count])
+        let rows = splitter.feed(buffer[..<count])
+        if !rows.isEmpty { onRows(rows) }
     }
-    if let last = splitter.finish() { rows.append(last) }
-    return rows
+    if let last = splitter.finish() { onRows([last]) }
 }
