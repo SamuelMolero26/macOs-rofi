@@ -48,6 +48,13 @@ import RofiCore
         #expect(matches("-fox", "x-foxy", options))
     }
 
+    @Test func negationComparesAndRemovesOnlyTheFirstUTF8Byte() {
+        let query = "-\u{0301}foo"
+        #expect(!matches(query, "\u{0301}foo"))
+        #expect(!matches(query, query))
+        #expect(matches(query, "foo"))
+    }
+
     @Test func negationAppliesWithoutTokenizing() {
         var options = MatchOptions()
         options.tokenize = false

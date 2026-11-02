@@ -53,8 +53,9 @@ public func isCaseSensitive(query: String, options: MatchOptions) -> Bool {
 private func compile(_ token: String, _ options: MatchOptions, _ caseSensitive: Bool)
     -> (regex: NSRegularExpression, invert: Bool)
 {
-    let invert = token.first == options.negateChar
-    let text = invert ? String(token.dropFirst()) : token
+    let bytes = token.utf8
+    let invert = bytes.first == rawByte(of: options.negateChar)
+    let text = invert ? String(decoding: bytes.dropFirst(), as: UTF8.self) : token
     let pattern = switch options.method {
     case .normal: escapeRegex(text)
     case .regex: text
@@ -66,6 +67,14 @@ private func compile(_ token: String, _ options: MatchOptions, _ caseSensitive: 
     // The escaped fallback always compiles.
     let regex = makeRegex(pattern, options, caseSensitive) ?? makeRegex(escapeRegex(text), options, caseSensitive)!
     return (regex, invert)
+}
+
+private func rawByte(of character: Character) -> UInt8? {
+    let scalars = character.unicodeScalars
+    if scalars.count == 1, let value = scalars.first?.value, value <= UInt8.max {
+        return UInt8(value)
+    }
+    return String(character).utf8.first
 }
 
 private func makeRegex(_ pattern: String, _ options: MatchOptions, _ caseSensitive: Bool) -> NSRegularExpression? {
