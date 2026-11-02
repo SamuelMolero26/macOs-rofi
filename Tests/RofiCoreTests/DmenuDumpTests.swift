@@ -70,6 +70,21 @@ import RofiCore
         #expect(throws: InvalidMatchingMethod(name: "bogus")) { try dump(["-matching", "normal,bogus"]) }
     }
 
+    @Test func fifthRecognizedMatchingMethodIsAnError() {
+        let value = "normal,regex,glob,fuzzy,prefix"
+        #expect(throws: TooManyMatchingMethods(value: value)) { try dump(["-matching", value]) }
+    }
+
+    @Test func duplicateMatchingMethodsCountTowardTheLimit() {
+        let value = "normal,normal,normal,normal,normal"
+        #expect(throws: TooManyMatchingMethods(value: value)) { try dump(["-matching", value]) }
+    }
+
+    @Test func matchingNamesAfterTheLimitAreNotInspected() {
+        let value = "normal,regex,glob,fuzzy,prefix,bogus"
+        #expect(throws: TooManyMatchingMethods(value: value)) { try dump(["-matching", value]) }
+    }
+
     @Test func onlyMatchWithNoRowsPrintsNothing() throws {
         #expect(try dump(["-only-match"]).dump(rows: []) == [])
     }

@@ -14,6 +14,19 @@ public struct InvalidMatchingMethod: Error, Equatable, CustomStringConvertible {
     }
 }
 
+/// `-matching` enabled the fifth recognized method (source/helper.c:709-715).
+public struct TooManyMatchingMethods: Error, Equatable, CustomStringConvertible {
+    public let value: String
+
+    public init(value: String) {
+        self.value = value
+    }
+
+    public var description: String {
+        "config.matching=\(value) to many matching options enabled."
+    }
+}
+
 /// Which end of a row too long to fit gives way to an ellipsis.
 public enum EllipsizeMode: Equatable, Sendable {
     case start, middle, end
@@ -273,16 +286,21 @@ private let defaultMenuLines: UInt32 = 15
 /// `config.matching`: every comma-separated name must be valid (ASCII case
 /// ignored); the first one is used (source/helper.c:695-731). `""` splits
 /// into no names, which returns nil and keeps the default.
-// ponytail: rofi also rejects five or more names ("to many matching options").
 private func parseMatching(_ value: String) throws -> MatchingMethod? {
     let names = value.isEmpty ? [] : value.split(separator: ",", omittingEmptySubsequences: false)
-    let methods = try names.map { name in
+    var firstMethod: MatchingMethod?
+    var recognizedCount = 0
+    for name in names {
         guard let method = MatchingMethod(rawValue: name.lowercased()) else {
             throw InvalidMatchingMethod(name: String(name))
         }
-        return method
+        firstMethod = firstMethod ?? method
+        recognizedCount += 1
+        if recognizedCount == 5 {
+            throw TooManyMatchingMethods(value: value)
+        }
     }
-    return methods.first
+    return firstMethod
 }
 
 /// `g_regex_split_simple(separator, string, G_REGEX_CASELESS, 0)`: empty pieces

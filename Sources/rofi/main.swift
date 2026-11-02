@@ -46,6 +46,8 @@ do {
     pipeline = try DmenuPipeline(arguments: args)
 } catch let error as InvalidMatchingMethod {
     fail("\(error)", status: EX_DATAERR)
+} catch let error as TooManyMatchingMethods {
+    fail("\(error)", status: EX_DATAERR)
 } catch {
     fail("\(error)")
 }
