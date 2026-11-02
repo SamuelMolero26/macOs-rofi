@@ -39,6 +39,31 @@ import RofiCore
         #expect(Arguments(["rofi"]).char("-sep") == nil)
     }
 
+    // Contract: find_arg_uint, rofi source/helper.c:373-380.
+    @Test func uintParsesLikeStrtoul() {
+        #expect(Arguments(["rofi", "-l", "25"]).uint("-l") == 25)
+        #expect(Arguments(["rofi", "-l", " +7"]).uint("-l") == 7)
+        #expect(Arguments(["rofi", "-l", "12abc"]).uint("-l") == 12)
+        #expect(Arguments(["rofi", "-l", "abc"]).uint("-l") == 0)
+        #expect(Arguments(["rofi", "-l", ""]).uint("-l") == 0)
+    }
+
+    @Test func uintIsAlwaysBaseTen() {
+        #expect(Arguments(["rofi", "-l", "010"]).uint("-l") == 10)
+        #expect(Arguments(["rofi", "-l", "0x10"]).uint("-l") == 0)
+    }
+
+    @Test func uintWrapsIntoAnUnsignedInt() {
+        #expect(Arguments(["rofi", "-l", "-1"]).uint("-l") == UInt32.max)
+        #expect(Arguments(["rofi", "-l", "4294967299"]).uint("-l") == 3)
+        #expect(Arguments(["rofi", "-l", "99999999999999999999999"]).uint("-l") == UInt32.max)
+    }
+
+    @Test func uintNeedsAFollowingArgument() {
+        #expect(Arguments(["rofi", "-l"]).uint("-l") == nil)
+        #expect(Arguments(["rofi"]).uint("-l") == nil)
+    }
+
     @Test func boolKeepsTheDefaultWhenAbsent() {
         #expect(Arguments(["rofi"]).bool("tokenize", default: true))
         #expect(!Arguments(["rofi"]).bool("case-smart", default: false))
