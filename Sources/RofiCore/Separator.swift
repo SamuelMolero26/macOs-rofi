@@ -1,3 +1,5 @@
+import Darwin
+
 /// Parses a `-sep` value or a script `delim` header the way rofi's
 /// `helper_parse_char` does (source/helper.c:383-429): a single character,
 /// a backslash escape, or `\xHH`. Anything else falls back to newline.
@@ -11,15 +13,11 @@ public func parseSeparator(_ arg: String) -> UInt8 {
         return escaped
     }
     if bytes.count > 2, bytes[0] == backslash, bytes[1] == UInt8(ascii: "x") {
-        // ponytail: leading hex digits only, like strtol on plain hex; its
-        // whitespace/sign/0x-prefix forms are not supported.
-        // Wrapping UInt8 math keeps the low byte, matching C's (char) cast.
-        var value: UInt8 = 0
-        for byte in bytes.dropFirst(2) {
-            guard let digit = Character(Unicode.Scalar(byte)).hexDigitValue else { break }
-            value = value &* 16 &+ UInt8(digit)
+        return arg.withCString { pointer in
+            // `strtol` supplies whitespace/sign/prefix handling and clamps
+            // overflow; truncation retains the low byte of C's `char` cast.
+            UInt8(truncatingIfNeeded: strtol(pointer.advanced(by: 2), nil, 16))
         }
-        return value
     }
     return UInt8(ascii: "\n")
 }
