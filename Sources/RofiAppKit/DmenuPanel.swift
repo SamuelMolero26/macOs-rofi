@@ -308,10 +308,19 @@ import os
         if session.selectedVisibleIndex != selection {
             syncSelection()
         }
+        // The end of input clears the one overlay, even a multi-select count
+        // (source/modes/dmenu.c:237-240).
         if pending.ended {
-            loadingLabel.isHidden = true
-            searchFieldBesideLoading.isActive = false
+            setOverlay(nil)
         }
+    }
+
+    /// Upstream's single overlay slot holds "Loading.. " or the multi-select
+    /// count, whichever was set last (source/modes/dmenu.c:936-943, 1058-1060).
+    private func setOverlay(_ text: String?) {
+        loadingLabel.stringValue = text ?? ""
+        loadingLabel.isHidden = text == nil
+        searchFieldBesideLoading.isActive = text != nil
     }
 
     private func reloadMatches() {
@@ -351,6 +360,24 @@ import os
     }
 }
 
+extension DmenuPanelController {
+    /// A `-multi-select` toggle keeps the panel open, so the ballots, the
+    /// moved selection and the count overlay are redrawn.
+    fileprivate func acceptAlternate() {
+        let overlayBefore = session.selectionOverlay
+        if let completion = session.acceptAlternate() {
+            finish(completion)
+            return
+        }
+        guard session.pipeline.multiSelect else { return }
+        reloadMatches()
+        // A refused toggle leaves the count unchanged and must not clear
+        // "Loading.. " mid-stream; upstream returns before touching the
+        // overlay (source/modes/dmenu.c:908-911).
+        if session.selectionOverlay != overlayBefore { setOverlay(session.selectionOverlay) }
+    }
+}
+
 extension DmenuPanelController: NSSearchFieldDelegate {
     func controlTextDidChange(_ notification: Notification) {
         if let editor = searchField.currentEditor() as? NSTextView,
@@ -366,7 +393,15 @@ extension DmenuPanelController: NSSearchFieldDelegate {
         guard !textView.hasMarkedText() else { return false }
         switch commandSelector {
         case #selector(NSResponder.insertNewline(_:)):
-            finish(session.accept())
+            // Shift+Return has no binding of its own in the standard key
+            // bindings, so it arrives here; it is upstream's kb-accept-alt
+            // (source/keyb.c:127-130).
+            let modifiers = NSApp.currentEvent?.modifierFlags.intersection([.shift, .control, .option, .command])
+            if modifiers == .shift {
+                acceptAlternate()
+            } else {
+                finish(session.accept())
+            }
         case #selector(NSResponder.cancelOperation(_:)):
             finish(session.cancel())
         case #selector(NSResponder.moveUp(_:)):
@@ -394,7 +429,7 @@ extension DmenuPanelController: NSTableViewDataSource, NSTableViewDelegate {
         } else {
             cell = makeCell()
         }
-        cell.textField?.stringValue = session.matches[row].row.text
+        cell.textField?.stringValue = session.displayText(for: session.matches[row])
         return cell
     }
 

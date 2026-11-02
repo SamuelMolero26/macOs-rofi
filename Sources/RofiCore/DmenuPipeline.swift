@@ -47,6 +47,20 @@ public struct DmenuPipeline: Sendable {
     public var lines: Int?
     /// `-b`: bottom center, not dmenu's full-width bar.
     public var atBottom = false
+    /// `-selected-row`: the source row selected at start, or nil for the first
+    /// visible row.
+    public var selectedRow: Int?
+    /// `-select`: a query whose first matching row is selected at start.
+    public var select: String?
+    /// `-a`: rows drawn as active.
+    public var activeRows: [RowRange] = []
+    /// `-u`: rows drawn as urgent.
+    public var urgentRows: [RowRange] = []
+    /// `-multi-select`: Shift+Return toggles rows, and accepting prints them all.
+    public var multiSelect = false
+    /// Prefixes for toggled and untoggled rows under `-multi-select`.
+    public var ballotSelected = "☑ "
+    public var ballotUnselected = "☐ "
 
     /// The window title around `prompt` (source/view.c:1892-1894).
     public var windowTitle: String { "rofi - \(prompt)" }
@@ -98,6 +112,33 @@ public struct DmenuPipeline: Sendable {
             lines = max(0, Int(Int32(truncatingIfNeeded: value)))
         }
         atBottom = args.has("-b")
+        // UINT32_MAX is upstream's "no row" default, so a value that wraps to
+        // it selects nothing (source/modes/dmenu.c:548, 555).
+        if let row = args.uint("-selected-row"), row != UInt32.max {
+            selectedRow = Int(row)
+        }
+        select = args.string("-select")
+        // Contract: source/modes/dmenu.c:561-572.
+        activeRows = args.string("-a").map(parseRowRanges) ?? []
+        urgentRows = args.string("-u").map(parseRowRanges) ?? []
+        // Contract: source/modes/dmenu.c:543-545 and 981-984.
+        multiSelect = args.has("-multi-select")
+        ballotSelected = args.string("-ballot-selected-str") ?? ballotSelected
+        ballotUnselected = args.string("-ballot-unselected-str") ?? ballotUnselected
+    }
+
+    /// The source row selected when the dialog opens: the first row matching
+    /// `-select` with the configured matching, else `-selected-row`
+    /// (source/modes/dmenu.c:1005-1017). Both force sync input, so `rows` is
+    /// the whole input.
+    public func initialSelection(in rows: [Row]) -> Int? {
+        if let select {
+            let matcher = Matcher(query: select, options: match)
+            if let row = rows.firstIndex(where: { matcher.matches($0.text) }) {
+                return row
+            }
+        }
+        return selectedRow
     }
 
     /// Matches row text while retaining each row's original input position.
@@ -148,7 +189,12 @@ public struct DmenuPipeline: Sendable {
     /// Applies dmenu's immediate shortcuts or creates pure interactive state.
     public func start(rows: [Row]) -> DmenuStart {
         if let completion = shortcut(rows: rows) { return .completed(completion) }
-        let session = DmenuSession(pipeline: self, rows: rows, query: filter ?? "")
+        let session = DmenuSession(
+            pipeline: self,
+            rows: rows,
+            query: filter ?? "",
+            selectedRow: initialSelection(in: rows)
+        )
         if let completion = session.autoSelectCompletion() { return .completed(completion) }
         return .session(session)
     }

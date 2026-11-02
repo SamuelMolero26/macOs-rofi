@@ -189,4 +189,90 @@ import RofiCore
             #expect(completion == shortcut)
         }
     }
+
+    // Contract: find_arg_uint into selected_line, whose UINT32_MAX default
+    // means no row (source/modes/dmenu.c:548, 555; source/helper.c:373-380).
+    @Test(arguments: [
+        ([], nil),
+        (["-selected-row", "2"], 2),
+        (["-selected-row", "abc"], 0),           // strtoul garbage is 0
+        (["-selected-row", "4294967298"], 2),    // narrowed to unsigned int
+        (["-selected-row", "4294967295"], nil),  // UINT32_MAX is the "none" sentinel
+        (["-selected-row", "-1"], nil),          // a sign wraps to UINT32_MAX
+        (["-selected-row"], nil),                // no value: find_arg_uint leaves the default
+    ] as [([String], Int?)])
+    func selectedRowReadsLikeFindArgUint(flags: [String], row: Int?) throws {
+        #expect(try pipeline(flags).selectedRow == row)
+    }
+
+    // Contract: find_arg_str("-select") (source/modes/dmenu.c:1005-1006).
+    @Test func selectReadsItsStringArgument() throws {
+        #expect(try pipeline().select == nil)
+        #expect(try pipeline(["-select", "an"]).select == "an")
+    }
+
+    // Contract: parse_ranges on -u and -a (source/modes/dmenu.c:561-572).
+    @Test func activeAndUrgentReadTheirRangeLists() throws {
+        let pipeline = try pipeline(["-a", "0,2-3", "-u", "-1:"])
+
+        #expect(pipeline.activeRows == parseRowRanges("0,2-3"))
+        #expect(pipeline.urgentRows == parseRowRanges("-1:"))
+        #expect(try self.pipeline().activeRows.isEmpty)
+        #expect(try self.pipeline().urgentRows.isEmpty)
+    }
+
+    // Contract: -select tokenizes with the configured matching and picks the
+    // first matching entry, overriding -selected-row only on a match
+    // (source/modes/dmenu.c:1005-1017).
+    @Test(arguments: [
+        ([], nil),
+        (["-selected-row", "1"], 1),
+        (["-select", "rr"], 2),
+        (["-select", "a"], 0),                        // first match wins
+        (["-select", "b"], nil),                      // dmenu is case-sensitive without -i
+        (["-select", "b", "-i"], 1),
+        (["-select", "zzz", "-selected-row", "2"], 2), // no match keeps -selected-row
+        (["-select", "rr", "-selected-row", "0"], 2),
+        (["-select", "^c", "-matching", "regex"], 2),
+    ] as [([String], Int?)])
+    func initialSelectionResolvesSelectThenSelectedRow(flags: [String], row: Int?) throws {
+        #expect(try pipeline(flags).initialSelection(in: fruit) == row)
+    }
+
+    // -select and -selected-row only move the cursor; -dump prints every match
+    // (source/modes/dmenu.c:1018-1033).
+    @Test func selectionFlagsDoNotChangeTheDump() throws {
+        let plain = try pipeline()
+        let selecting = try pipeline(["-select", "rr", "-selected-row", "1", "-a", "0", "-u", "1"])
+
+        #expect(selecting.dump(rows: fruit) == plain.dump(rows: fruit))
+    }
+
+    // Contract: source/modes/dmenu.c:534, 543-545 and 981-984.
+    @Test func multiSelectAndBallotsHaveUpstreamDefaults() throws {
+        let pipeline = try pipeline()
+
+        #expect(!pipeline.multiSelect)
+        #expect(pipeline.ballotSelected == "☑ ")
+        #expect(pipeline.ballotUnselected == "☐ ")
+    }
+
+    @Test func multiSelectAndBallotsAreRead() throws {
+        let pipeline = try pipeline([
+            "-multi-select", "-ballot-selected-str", "[x] ", "-ballot-unselected-str", "[ ] ",
+        ])
+
+        #expect(pipeline.multiSelect)
+        #expect(pipeline.ballotSelected == "[x] ")
+        #expect(pipeline.ballotUnselected == "[ ] ")
+        // Multi-select keeps async input (source/modes/dmenu.c:537-545).
+        #expect(pipeline.isAsync)
+    }
+
+    @Test func multiSelectDoesNotChangeTheDump() throws {
+        let plain = try pipeline(["-format", "i:s"])
+        let multi = try pipeline(["-format", "i:s", "-multi-select"])
+
+        #expect(multi.dump(rows: fruit) == plain.dump(rows: fruit))
+    }
 }
