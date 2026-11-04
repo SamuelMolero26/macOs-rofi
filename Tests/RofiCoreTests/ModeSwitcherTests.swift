@@ -7,6 +7,8 @@ private final class FakeMode: Mode {
     let name: String
     var rows: [Row]
     var message: String?
+    var displayName: String?
+    var selectedRowAfterResult: Int?
     var answer: ModeResult = .exit
     var rewrite: String?? = .none
     var onResult: () -> Void = {}
@@ -261,5 +263,40 @@ private final class FakeMode: Mode {
     @Test func emptyQueryShowsEveryRow_view_c_829() {
         let s = switcher()
         #expect(s.matches.map(\.sourceIndex) == [0, 1, 2])
+    }
+
+    // source/mode.c:199-202, source/modes/script.c:161-164: a mode's own
+    // display name (a script's prompt header) beats -display-<name>.
+    @Test func modeDisplayNameOverridesTheConfiguredOne_mode_c_199() {
+        b.displayName = "Pick"
+        var s = switcher(displayNames: ["Apps", "Bees", "Cats"])
+        #expect(s.prompt == "Apps")
+        s.next()
+        #expect(s.prompt == "Pick")
+        #expect(s.windowTitle == "rofi - Pick")
+        #expect(s.displayName(at: 1) == "Pick")
+        #expect(s.displayName(at: 2) == "Cats")
+    }
+
+    // source/view.c:369-382: a mode may select a source row from `_result`
+    // (script.c:439-445); nil keeps the clamped visible selection.
+    @Test func modeCanSelectASourceRowAfterItsResult_view_c_369() {
+        a.answer = .reload
+        var s = switcher()
+        s.selectVisibleIndex(2)
+        a.selectedRowAfterResult = 0
+        s.accept()
+        #expect(s.selectedVisibleIndex == 0)
+
+        s.selectVisibleIndex(1)
+        a.selectedRowAfterResult = nil
+        s.accept()
+        #expect(s.selectedVisibleIndex == 1)
+
+        s.updateQuery("an")
+        a.selectedRowAfterResult = 0
+        s.accept()
+        #expect(s.matches.map(\.sourceIndex) == [1])
+        #expect(s.selectedVisibleIndex == 0, "a row that is not visible selects the first")
     }
 }

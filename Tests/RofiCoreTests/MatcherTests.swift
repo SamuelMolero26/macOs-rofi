@@ -133,4 +133,24 @@ import Testing
         #expect(matches("café", "cafe", options))
         #expect(!matches("cafe", "café"))
     }
+
+    // source/modes/script.c:535-545: each token that the text fails is retried
+    // on meta, so tokens may split between text and meta.
+    @Test func metaRetriesEachTokenTheTextFails_script_c_539() {
+        let matcher = Matcher(query: "fox web", options: MatchOptions())
+        #expect(matcher.matches("firefox", meta: "browser web"))
+        #expect(!matcher.matches("firefox", meta: nil))
+        #expect(!matcher.matches("firefox", meta: "browser"))
+        #expect(Matcher(query: "web", options: MatchOptions()).matches("firefox", meta: "web"))
+    }
+
+    // A negated token the text satisfies is retried on meta too, so a match in
+    // either one excludes the row.
+    @Test func negatedTokenMustMissTextAndMeta_script_c_539() {
+        let matcher = Matcher(query: "-web", options: MatchOptions())
+        #expect(matcher.matches("firefox", meta: "browser"))
+        #expect(!matcher.matches("firefox", meta: "web"))
+        #expect(!matcher.matches("web", meta: "browser"))
+        #expect(!matcher.matches("web", meta: nil))
+    }
 }
