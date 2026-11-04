@@ -163,6 +163,44 @@ import Testing
         #expect(completion.outcome == .accepted)
     }
 
+    // Interactive auto-select fires MENU_OK (source/view.c:934-940), and
+    // dmenu_finalize refuses a nonselectable row without finishing
+    // (source/modes/dmenu.c:883-886, 913-916): nothing prints, the dialog stays.
+    @Test func autoSelectInitialFilterRefusesUniqueNonselectableRow() throws {
+        var heading = Row(parsing: "cherry")
+        heading.nonselectable = true
+        let pipeline = try pipeline(["-auto-select", "-filter", "err"])
+
+        guard case .session(let session) = pipeline.start(rows: [fruit[0], fruit[1], heading]) else {
+            Issue.record("Expected the session to stay open on a nonselectable unique match")
+            return
+        }
+        #expect(session.matches.map(\.sourceIndex) == [2])
+    }
+
+    @Test func queryUpdateAutoSelectRefusesNonselectableButNotLaterSelectableRow() throws {
+        var heading = Row(parsing: "cherry")
+        heading.nonselectable = true
+        var session = try makeSession(["-auto-select", "-format", "i:s"], rows: [fruit[0], fruit[1], heading])
+
+        #expect(session.updateQuery("err") == nil)
+        #expect(session.updateQuery("Ban")?.output == "1:Banana\n")
+    }
+
+    // The pre-UI shortcut prints cmd_list[0] with no nonselectable check
+    // (source/modes/dmenu.c:995-998), so a single-row input still completes.
+    @Test func autoSelectSingleRowInputIgnoresNonselectable() throws {
+        var only = Row(parsing: "only")
+        only.nonselectable = true
+        let pipeline = try pipeline(["-auto-select"])
+
+        guard case .completed(let completion) = pipeline.start(rows: [only]) else {
+            Issue.record("Expected the pre-UI auto-select shortcut to complete")
+            return
+        }
+        #expect(completion.output == "only\n")
+    }
+
     @Test func queryUpdateAutoSelectsAUniqueFilteredRow() throws {
         let pipeline = try pipeline(["-auto-select", "-format", "i:s:f"])
         guard case .session(var session) = pipeline.start(rows: fruit) else {

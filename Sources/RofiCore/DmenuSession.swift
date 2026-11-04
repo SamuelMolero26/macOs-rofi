@@ -161,8 +161,11 @@ public struct DmenuSession: Sendable {
         return DmenuCompletion(output: nil, outcome: .cancelled)
     }
 
+    /// Interactive auto-select (source/view.c:934-940) goes through the same
+    /// finalize as Return, which refuses a nonselectable row and keeps the
+    /// dialog open (source/modes/dmenu.c:883-886, 913-916).
     func autoSelectCompletion() -> DmenuCompletion? {
-        guard pipeline.autoSelect, matches.count == 1 else { return nil }
+        guard pipeline.autoSelect, matches.count == 1, !matches[0].row.nonselectable else { return nil }
         return completion(for: matches[0])
     }
 
