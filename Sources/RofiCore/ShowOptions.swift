@@ -65,6 +65,9 @@ public struct ShowOptions: Sendable {
     /// Printed on stderr only when stdout is a terminal (source/rofi.c:533-545).
     public var warnings: [String] = []
     public var match = MatchOptions()
+    /// rofi's available modes: the built-ins (source/rofi.c:718-739), then
+    /// each script spec as it is first resolved (source/rofi.c:795-807).
+    public var availableModes: [ModeSpec] = []
 
     public init(arguments args: Arguments) throws {
         // xrmoptions.c:75-86 parses switchers, modi, then modes; the last one
@@ -72,28 +75,29 @@ public struct ShowOptions: Sendable {
         // ponytail: upstream defaults to `window,drun,run,ssh`
         // (config/config.c:36-42); none of those exist yet.
         let list = args.string("-modes") ?? args.string("-modi") ?? args.string("-switchers") ?? ""
-        // rofi's available modes: each name resolves to the first spec seen.
-        var known: [ModeSpec] = []
+        // Each name resolves to the first available mode with it.
+        // ponytail: only `filebrowser` is built in; window, drun, run and ssh
+        // are not, so they stay "not found".
+        // ponytail: upstream reads the filebrowser's settings from the theme
+        // (source/modes/filebrowser.c:395-405), not from flags.
+        var known: [ModeSpec] = [
+            .fileBrowser(
+                directory: args.string("-filebrowser-directory"),
+                showHidden: args.bool("filebrowser-show-hidden", default: false))
+        ]
         func resolve(_ token: String) -> ModeSpec? {
             if let spec = known.first(where: { $0.name == token }) { return spec }
-            // ponytail: only `filebrowser` is built in; window, drun, run and
-            // ssh are not, so they stay "not found".
-            // ponytail: upstream reads these two from the theme
-            // (source/modes/filebrowser.c:395-405), not from flags.
-            let spec =
-                token == "filebrowser"
-                ? ModeSpec.fileBrowser(
-                    directory: args.string("-filebrowser-directory"),
-                    showHidden: args.bool("filebrowser-show-hidden", default: false))
-                : ModeSpec(scriptSpec: token)
-            guard let spec else { return nil }
+            guard let spec = ModeSpec(scriptSpec: token) else { return nil }
             if !known.contains(where: { $0.name == spec.name }) { known.append(spec) }
             return spec
         }
+        // help_print_mode_not_found (source/rofi.c:547-562): every available
+        // mode, `+` on the enabled ones.
         func notFound(_ name: String) -> String {
             "Mode \(name) is not found.\nThe following modes are known:\n"
-                + known.map { "        * +\($0.name)\n" }.joined()
+                + known.map { "        * \(modes.contains($0) ? "+" : "")\($0.name)\n" }.joined()
         }
+        defer { availableModes = known }
 
         // setup_modes (source/rofi.c:812-826): strtok skips empty tokens.
         var errors: [String] = []
@@ -140,8 +144,8 @@ public struct ShowOptions: Sendable {
 
 extension ShowOptions {
     /// `help_print_no_arguments` with its markup rendered away
-    /// (source/rofi.c:564-595). Every known mode is a listed script mode, so
-    /// none can be enabled.
+    /// (source/rofi.c:564-595): the enabled modes, then the available ones
+    /// that are not enabled.
     public var unsureWhatToShow: String {
         "Rofi is unsure what to show.\n\n"
             + "Please specify the mode you want to show.\n\n"
@@ -149,6 +153,7 @@ extension ShowOptions {
             + "The following modes are enabled:\n"
             + modes.map { "    • \($0.name)\n" }.joined()
             + "\nThe following modes can be enabled:\n"
+            + availableModes.filter { !modes.contains($0) }.map { "    • \($0.name)\n" }.joined()
             + "\nTo activate a mode, add it to the list in the modes setting.\n"
     }
 }

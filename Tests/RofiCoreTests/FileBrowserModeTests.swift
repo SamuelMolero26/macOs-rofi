@@ -39,6 +39,8 @@ private struct Opened: Equatable {
 @Suite final class FileBrowserModeTests {
     private let system = FakeFileSystem()
     private var opened: [Opened] = []
+    /// What the injected opener answers.
+    private var openResult: Result<Void, FileBrowserOpenFailure> = .success(())
 
     init() {
         system.contents["/home/u"] = [
@@ -58,7 +60,10 @@ private struct Opened: Equatable {
     private func make(directory: String? = nil, showHidden: Bool = false) -> FileBrowserMode {
         FileBrowserMode(
             directory: directory, showHidden: showHidden, home: "/home/u", fileSystem: system,
-            opener: { [unowned self] path, directory in opened.append(Opened(path: path, directory: directory)) })
+            opener: { [unowned self] path, directory in
+                opened.append(Opened(path: path, directory: directory))
+                return openResult
+            })
     }
 
     private func names(_ mode: FileBrowserMode) -> [String] { mode.rows.map(\.text) }
@@ -166,6 +171,21 @@ private struct Opened: Equatable {
         #expect(opened == [Opened(path: "/home/u/zeta.txt", directory: "/home/u")])
     }
 
+    // filebrowser.c:510-519, helper.c:1426-1434: a launch that fails is
+    // reported worded as upstream's error dialog; here it is the message and
+    // the view stays open on the same directory.
+    @Test func failedOpenIsReportedAndStaysOpen_helper_c_1426() {
+        openResult = .failure(FileBrowserOpenFailure(command: "/usr/bin/open '/home/u/zeta.txt'", reason: "boom"))
+        let mode = make()
+        let (result, _) = act(mode, .ok, row: row(mode, "zeta.txt"))
+        #expect(result == .reload)
+        #expect(mode.message == "Failed to execute: '/usr/bin/open '/home/u/zeta.txt''\nError: 'boom'")
+        #expect(mode.currentDirectory == "/home/u")
+        // The next action brings the directory message back.
+        _ = act(mode, .ok, row: row(mode, "Docs"))
+        #expect(mode.message == "Current directory: /home/u/Docs")
+    }
+
     // filebrowser.c:532: no valid selection reloads.
     @Test func enterWithoutValidRowReloads_filebrowser_c_532() {
         let mode = make()
@@ -260,6 +280,19 @@ private struct Opened: Equatable {
         #expect(byName["broken"] == FileBrowserEntry(name: "broken", kind: .file, isLink: true))
         #expect(byName["pipe"]?.kind == .other)
         #expect(byName["."] == nil && byName[".."] == nil)
+    }
+
+    // helper.c:1426-1434: the real opener reports a failed `open`, with the
+    // command quoted like g_shell_quote, without launching anything.
+    @Test func systemOpenerReportsFailure_helper_c_1426() throws {
+        let path = root + "/it's-missing"
+        let result = openWithSystemOpener(path: path, directory: root)
+        guard case .failure(let failure) = result else {
+            Issue.record("expected a failure")
+            return
+        }
+        #expect(failure.command == "/usr/bin/open '" + root + "/it'\\''s-missing'")
+        #expect(failure.reason.contains("does not exist"))
     }
 
     @Test func queriesPaths() {

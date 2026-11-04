@@ -75,12 +75,13 @@ import Testing
         #expect(options.modes == [.script(name: "a", path: want)])
     }
 
-    // source/rofi.c:546-562, 832-835: a name with no built-in or script spec
-    // is an error, listing the modes known so far.
+    // source/rofi.c:547-562, 832-835: a name with no built-in or script spec
+    // is an error, listing the built-ins, then the scripts known so far, with
+    // `+` on the enabled ones.
     @Test func unknownOrBuiltinNameIsNotFound_rofi_c_546() {
         #expect(
             errors(["-modes", "a:x,run"]) == [
-                "Mode run is not found.\nThe following modes are known:\n        * +a\n"
+                "Mode run is not found.\nThe following modes are known:\n        * filebrowser\n        * +a\n"
             ])
     }
 
@@ -90,8 +91,8 @@ import Testing
         let errors = errors(["-modes", "run,drun", "-show", "a:x"])
         #expect(
             errors == [
-                "Mode run is not found.\nThe following modes are known:\n",
-                "Mode drun is not found.\nThe following modes are known:\n",
+                "Mode run is not found.\nThe following modes are known:\n        * filebrowser\n",
+                "Mode drun is not found.\nThe following modes are known:\n        * filebrowser\n",
             ])
     }
 
@@ -102,16 +103,16 @@ import Testing
         #expect(matching.hasPrefix("The configuration failed to validate:\n\tconfig.matching=bogus"))
         #expect(
             errors(["-modes", "run", "-matching", "bogus", "-show", "nope"]) == [
-                "Mode run is not found.\nThe following modes are known:\n",
+                "Mode run is not found.\nThe following modes are known:\n        * filebrowser\n",
                 matching,
             ])
         #expect(errors(["-modes", "a:x", "-matching", "bogus", "-show", "nope"]) == [matching])
         #expect(try parse(["-matching", "fuzzy"]).match.method == .fuzzy)
     }
 
-    // source/rofi.c:564-595: with no `-show` rofi says so and lists the
-    // enabled modes. Its markup is rendered away; only script modes exist,
-    // and all of them are enabled, so none can be enabled.
+    // source/rofi.c:564-595: with no `-show` rofi says so, lists the enabled
+    // modes, then the built-ins that are not enabled. Its markup is rendered
+    // away.
     @Test func unsureWhatToShowListsTheEnabledModes_rofi_c_564() throws {
         #expect(
             try parse(["-modes", "a:x,b:y,a:z"]).unsureWhatToShow == """
@@ -127,6 +128,7 @@ import Testing
                     • a
 
                 The following modes can be enabled:
+                    • filebrowser
 
                 To activate a mode, add it to the list in the modes setting.
 
@@ -186,7 +188,7 @@ import Testing
     @Test func showUnknownNameIsAnError_rofi_c_946() {
         #expect(
             errors(["-modes", "a:x", "-show", "run"]) == [
-                "Mode run is not found.\nThe following modes are known:\n        * +a\n"
+                "Mode run is not found.\nThe following modes are known:\n        * filebrowser\n        * +a\n"
             ])
     }
 
@@ -278,5 +280,16 @@ import Testing
         let modes = makeModes([.fileBrowser(directory: "/", showHidden: false)])
         #expect(modes.count == 1)
         #expect((modes[0] as? FileBrowserMode)?.currentDirectory == "/")
+    }
+
+    // source/rofi.c:547-562, 564-595, 718-739: an enabled filebrowser gets
+    // its `+` and is no longer offered as one that can be enabled.
+    @Test func enabledFilebrowserIsMarkedAndNotOffered_rofi_c_547() throws {
+        #expect(
+            errors(["-modes", "filebrowser,run"]) == [
+                "Mode run is not found.\nThe following modes are known:\n        * +filebrowser\n"
+            ])
+        let unsure = try parse(["-modes", "filebrowser"]).unsureWhatToShow
+        #expect(unsure.contains("enabled:\n    • filebrowser\n\nThe following modes can be enabled:\n\nTo activate"))
     }
 }

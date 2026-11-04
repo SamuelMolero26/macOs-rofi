@@ -72,21 +72,52 @@ public struct DiskFileSystem: FileBrowserFileSystem {
     }
 }
 
+/// A launch that failed: the command as upstream words it and why
+/// (source/helper.c:1426-1434).
+public struct FileBrowserOpenFailure: Error, Equatable, Sendable {
+    public var command: String
+    public var reason: String
+
+    public init(command: String, reason: String) {
+        self.command = command
+        self.reason = reason
+    }
+}
+
 /// Opens `path` the way the browser's `command` does: `path` as the argument,
 /// run from `directory` (filebrowser.c:510-519).
-public typealias FileBrowserOpener = (_ path: String, _ directory: String) -> Void
+public typealias FileBrowserOpener = (_ path: String, _ directory: String) -> Result<Void, FileBrowserOpenFailure>
 
-/// Runs `/usr/bin/open path` without waiting for it.
-/// ponytail: failures are ignored; upstream's helper shows an error dialog.
-public func openWithSystemOpener(path: String, directory: String) {
+/// Runs `/usr/bin/open path` from `directory`. Upstream's g_spawn_async only
+/// fails when the spawn does (helper.c:1424-1434); `open` hands off to Launch
+/// Services and exits at once, so its exit status and stderr are waited for
+/// too: a missing file or one no app can open fails here, not silently.
+/// ponytail: blocks the caller until `open` exits; it does not wait for the
+/// app it launches.
+public func openWithSystemOpener(path: String, directory: String) -> Result<Void, FileBrowserOpenFailure> {
+    // filebrowser.c:512-513: the command is `command` plus g_shell_quote(path).
+    let command = "/usr/bin/open '" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
     let process = Process()
+    let errors = Pipe()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
     process.arguments = [path]
     process.currentDirectoryURL = URL(fileURLWithPath: directory)
     process.standardInput = FileHandle.nullDevice
     process.standardOutput = FileHandle.nullDevice
-    process.standardError = FileHandle.nullDevice
-    try? process.run()
+    process.standardError = errors
+    do {
+        try process.run()
+    } catch {
+        return .failure(FileBrowserOpenFailure(command: command, reason: error.localizedDescription))
+    }
+    let output = errors.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
+    guard process.terminationReason == .exit, process.terminationStatus == 0 else {
+        let text = String(decoding: output, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        let reason = text.isEmpty ? "exited with status \(process.terminationStatus)" : text
+        return .failure(FileBrowserOpenFailure(command: command, reason: reason))
+    }
+    return .success(())
 }
 
 /// The `filebrowser` mode (source/modes/filebrowser.c): one directory at a
@@ -119,6 +150,9 @@ public final class FileBrowserMode: Mode {
     private let opener: FileBrowserOpener
     private var showHidden: Bool
     private var listing: [Listing] = []
+    /// The last failed launch, worded as upstream's error dialog
+    /// (helper.c:1428-1430); cleared by the next action.
+    private var failure: String?
 
     /// `file_browser_mode_init` (filebrowser.c:456-476): the configured
     /// directory when it is one, else the home directory (422-453).
@@ -140,7 +174,8 @@ public final class FileBrowserMode: Mode {
 
     /// Upstream shows the markup `<b>Current directory:</b> dir`
     /// (filebrowser.c:641-647), with its markup rendered away.
-    public var message: String? { "Current directory: " + currentDirectory }
+    /// A failed launch is shown in its place until the next action.
+    public var message: String? { failure ?? "Current directory: " + currentDirectory }
 
     /// `_get_display_value` (filebrowser.c:582-598).
     private func display(_ item: Listing) -> String? {
@@ -198,6 +233,7 @@ public final class FileBrowserMode: Mode {
 
     /// `file_browser_mode_result` (filebrowser.c:479-570).
     public func result(_ action: MenuAction, input: inout String?, selectedRow: Int?) -> ModeResult {
+        failure = nil
         switch action {
         case .cancel:
             return .exit
@@ -214,7 +250,13 @@ public final class FileBrowserMode: Mode {
                 guard let parent = parent(of: currentDirectory) else { return .reload }
                 return enter(parent)
             case .file:
-                opener(item.path, currentDirectory)
+                // Upstream exits even when the launch fails, behind an error
+                // dialog (510-519, helper.c:1426-1434); here the failure is
+                // the message and the view stays open.
+                if case .failure(let error) = opener(item.path, currentDirectory) {
+                    failure = "Failed to execute: '\(error.command)'\nError: '\(error.reason)'"
+                    return .reload
+                }
                 return .exit
             case .directory:
                 return enter(item.path)
