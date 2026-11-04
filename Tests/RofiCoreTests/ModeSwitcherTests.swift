@@ -299,4 +299,20 @@ private final class FakeMode: Mode {
         #expect(s.matches.map(\.sourceIndex) == [1])
         #expect(s.selectedVisibleIndex == 0, "a row that is not visible selects the first")
     }
+
+    // kb-row-up/kb-row-down move the visible selection, clamped at the ends
+    // like the dmenu panel (DmenuSession.moveSelection).
+    @Test func moveSelectionClampsToTheVisibleRows() {
+        var s = switcher()
+        s.moveSelection(by: 1)
+        #expect(s.selectedVisibleIndex == 1)
+        s.moveSelection(by: 5)
+        #expect(s.selectedVisibleIndex == 2)
+        s.moveSelection(by: -9)
+        #expect(s.selectedVisibleIndex == 0)
+
+        s.updateQuery("zzz")
+        s.moveSelection(by: 1)
+        #expect(s.selectedVisibleIndex == nil, "no visible row stays unselected")
+    }
 }
