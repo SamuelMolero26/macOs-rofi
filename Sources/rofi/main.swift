@@ -41,11 +41,54 @@ func rawCommandLineArguments() -> [[UInt8]] {
     }
 }
 
+/// Writes `text` on stderr as rofi's dialogs would show it.
+func report(_ text: String) {
+    FileHandle.standardError.write(Data("rofi: \(text)".utf8))
+}
+
+/// Script modes that could not start, worded as their error dialogs.
+func reportFailedModes(_ modes: [any Mode]) -> Bool {
+    let errors = modes.compactMap { ($0 as? ScriptMode)?.error }
+    for error in errors { report(error + "\n") }
+    return !errors.isEmpty
+}
+
+/// Everything outside dmenu: startup errors, then `-show`
+/// (source/rofi.c:1243-1250, 869-958). Only dmenu sets a return code, so
+/// accepting and cancelling both exit 0 (source/rofi.c:151).
+/// ponytail: `-e`, `-help` and the other actions are not implemented and
+/// leave rofi unsure what to show.
+@MainActor func runShow(_ args: Arguments) -> Never {
+    let options: ShowOptions
+    do {
+        options = try ShowOptions(arguments: args)
+    } catch {
+        fail("\(error)", status: (error as? InvalidModeConfiguration)?.exitStatus ?? EXIT_FAILURE)
+    }
+    if isatty(STDOUT_FILENO) == 1 {
+        for warning in options.warnings { FileHandle.standardError.write(Data(warning.utf8)) }
+    }
+    guard let start = options.startIndex else {
+        report(options.unsureWhatToShow)
+        exit(EXIT_SUCCESS)
+    }
+    let modes = makeModes(options.modes)
+    // run_mode_index: a script that cannot start shows an error dialog in
+    // place of the view (source/rofi.c:201-216, source/modes/script.c:242-246).
+    if reportFailedModes(modes) { exit(EXIT_SUCCESS) }
+    let switcher = ModeSwitcher(modes: modes, displayNames: options.displayNames, start: start, match: options.match)
+    runModePanel(switcher: switcher, sidebar: options.sidebarMode)
+    // A later run that cannot start ends its mode with no rows; its dialog
+    // would show after the view closes.
+    _ = reportFailedModes(modes)
+    exit(EXIT_SUCCESS)
+}
+
 let args = Arguments(rawArgv: rawCommandLineArguments())
 
-// Script mode and the rest of the CLI arrive in later features.
+// source/rofi.c:1043-1057.
 let invokedAsDmenu = args.argv.first?.split(separator: "/").last == "dmenu"
-guard args.has("-dmenu") || invokedAsDmenu else { fail("not implemented yet") }
+guard args.has("-dmenu") || invokedAsDmenu else { runShow(args) }
 
 let pipeline: DmenuPipeline
 do {
