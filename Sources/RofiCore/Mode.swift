@@ -45,6 +45,14 @@ public protocol Mode: AnyObject {
     var rows: [Row] { get }
     /// `_get_message` (source/mode.c:211-222); nil by default.
     var message: String? { get }
+    /// `Mode.display_name` set by the mode itself, as a script's prompt
+    /// header does (source/modes/script.c:161-164). It beats
+    /// `-display-<name>` (source/mode.c:199-202); nil by default.
+    var displayName: String? { get }
+    /// A source row the mode selected from `result`, as
+    /// rofi_view_set_selected_line (source/view.c:369-382), read right after
+    /// each `result`. nil keeps the visible selection; the default.
+    var selectedRowAfterResult: Int? { get }
     /// `_token_match`; by default the row's text must match.
     func matches(_ row: Row, matcher: Matcher) -> Bool
     /// `_result`. `input` is the query: set it to replace the query, or to nil
@@ -54,6 +62,8 @@ public protocol Mode: AnyObject {
 
 extension Mode {
     public var message: String? { nil }
+    public var displayName: String? { nil }
+    public var selectedRowAfterResult: Int? { nil }
 
     public func matches(_ row: Row, matcher: Matcher) -> Bool {
         matcher.matches(row.text)

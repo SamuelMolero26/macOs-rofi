@@ -36,11 +36,32 @@ public struct Matcher {
     }
 
     public func matches(_ text: String) -> Bool {
-        let subject = normalize ? stripMarks(text) : text
-        let range = NSRange(subject.startIndex..., in: subject)
+        let subject = self.subject(text)
+        return tokens.allSatisfy { satisfies($0, subject) }
+    }
+
+    /// Script mode's `script_token_match` (source/modes/script.c:532-546): a
+    /// token whose result on the text equals its invert flag is decided on
+    /// meta instead. A plain token may match either one; a negated token
+    /// must miss both.
+    public func matches(_ text: String, meta: String?) -> Bool {
+        let subject = self.subject(text)
+        let metaSubject = meta.map(self.subject)
         return tokens.allSatisfy { token in
-            (token.regex.firstMatch(in: subject, range: range) != nil) != token.invert
+            let test = satisfies(token, subject)
+            guard test == token.invert, let metaSubject else { return test }
+            return satisfies(token, metaSubject)
         }
+    }
+
+    private func subject(_ text: String) -> String {
+        normalize ? stripMarks(text) : text
+    }
+
+    /// `helper_token_match` for one token: matched, xor inverted.
+    private func satisfies(_ token: (regex: NSRegularExpression, invert: Bool), _ subject: String) -> Bool {
+        let range = NSRange(subject.startIndex..., in: subject)
+        return (token.regex.firstMatch(in: subject, range: range) != nil) != token.invert
     }
 }
 
