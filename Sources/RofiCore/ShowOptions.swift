@@ -1,7 +1,10 @@
 import Foundation
 
-/// One entry of the mode list. Only script modes exist so far.
+/// One entry of the mode list: a script mode or the built-in file browser.
 public enum ModeSpec: Equatable, Sendable {
+    /// `filebrowser` (source/modes/filebrowser.c:729) with its `directory` and
+    /// `show-hidden` settings (395-405, 422-453); nil directory means home.
+    case fileBrowser(directory: String?, showHidden: Bool)
     /// `name:path`, split once on ':' with the path tilde-expanded
     /// (source/modes/script.c:695-703).
     case script(name: String, path: String)
@@ -9,6 +12,7 @@ public enum ModeSpec: Equatable, Sendable {
     public var name: String {
         switch self {
         case .script(let name, _): name
+        case .fileBrowser: "filebrowser"
         }
     }
 
@@ -72,7 +76,17 @@ public struct ShowOptions: Sendable {
         var known: [ModeSpec] = []
         func resolve(_ token: String) -> ModeSpec? {
             if let spec = known.first(where: { $0.name == token }) { return spec }
-            guard let spec = ModeSpec(scriptSpec: token) else { return nil }
+            // ponytail: only `filebrowser` is built in; window, drun, run and
+            // ssh are not, so they stay "not found".
+            // ponytail: upstream reads these two from the theme
+            // (source/modes/filebrowser.c:395-405), not from flags.
+            let spec =
+                token == "filebrowser"
+                ? ModeSpec.fileBrowser(
+                    directory: args.string("-filebrowser-directory"),
+                    showHidden: args.bool("filebrowser-show-hidden", default: false))
+                : ModeSpec(scriptSpec: token)
+            guard let spec else { return nil }
             if !known.contains(where: { $0.name == spec.name }) { known.append(spec) }
             return spec
         }
@@ -153,7 +167,7 @@ private func disabledModeWarning(_ mode: String, list: String) -> String {
 /// `rofi_expand_path` (source/helper.c:784-813): `~` and `~user` expand in any
 /// component, then g_build_filenamev joins the components, dropping empty
 /// ones and the separators around inner ones.
-private func expandPath(_ path: String) -> String {
+func expandPath(_ path: String) -> String {
     let components = path.split(separator: "/", omittingEmptySubsequences: false).map { component -> String in
         guard component.first == "~" else { return String(component) }
         if component == "~" {

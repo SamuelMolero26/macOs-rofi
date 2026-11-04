@@ -153,6 +153,10 @@ public func makeModes(_ specs: [ModeSpec]) -> [any Mode] {
     specs.map { spec in
         switch spec {
         case .script(let name, let path): ScriptMode(name: name, command: path)
+        case .fileBrowser(let directory, let showHidden):
+            FileBrowserMode(
+                directory: directory, showHidden: showHidden,
+                home: ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory())
         }
     }
 }

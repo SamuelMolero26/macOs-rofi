@@ -235,4 +235,48 @@ import Testing
         #expect(
             try !DmenuPipeline(arguments: Arguments(["rofi", "-dmenu", "-case-sensitive", "-i"])).match.caseSensitive)
     }
+
+    // source/modes/filebrowser.c:729: `filebrowser` is a built-in mode name,
+    // so `-show` enables it with the usual warning.
+    @Test func showResolvesTheFilebrowserBuiltin_filebrowser_c_729() throws {
+        let options = try parse(["-show", "filebrowser"])
+        #expect(options.modes == [.fileBrowser(directory: nil, showHidden: false)])
+        #expect(options.modes.map(\.name) == ["filebrowser"])
+        #expect(options.startIndex == 0)
+        #expect(options.warnings.count == 1)
+    }
+
+    // source/rofi.c:795-826: the mode list resolves built-ins and scripts
+    // side by side, and a listed built-in raises no warning.
+    @Test func modesListMixesFilebrowserAndScripts_rofi_c_795() throws {
+        let options = try parse(["-modes", "a:x,filebrowser", "-show", "filebrowser"])
+        #expect(options.modes == [.script(name: "a", path: "x"), .fileBrowser(directory: nil, showHidden: false)])
+        #expect(options.startIndex == 1)
+        #expect(options.warnings.isEmpty)
+    }
+
+    // source/modes/filebrowser.c:395-405: `directory` and `show-hidden`.
+    // ponytail: upstream reads them from the theme; here they are flags.
+    @Test func filebrowserOptionsAreRead_filebrowser_c_395() throws {
+        let options = try parse([
+            "-modes", "filebrowser", "-filebrowser-directory", "/tmp", "-filebrowser-show-hidden",
+        ])
+        #expect(options.modes == [.fileBrowser(directory: "/tmp", showHidden: true)])
+        #expect(
+            try parse(["-modes", "filebrowser", "-no-filebrowser-show-hidden"]).modes
+                == [.fileBrowser(directory: nil, showHidden: false)])
+    }
+
+    // source/mode.c:189-208: `-display-filebrowser` renames the chrome.
+    @Test func filebrowserHonorsDisplayOption_mode_c_189() throws {
+        let options = try parse(["-modes", "filebrowser", "-display-filebrowser", "Files"])
+        #expect(options.displayNames == ["Files"])
+    }
+
+    // source/rofi.c:795-826: one mode is made per list entry.
+    @Test func makeModesBuildsTheFilebrowser_rofi_c_795() {
+        let modes = makeModes([.fileBrowser(directory: "/", showHidden: false)])
+        #expect(modes.count == 1)
+        #expect((modes[0] as? FileBrowserMode)?.currentDirectory == "/")
+    }
 }

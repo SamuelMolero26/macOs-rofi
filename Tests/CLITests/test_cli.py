@@ -58,6 +58,17 @@ class CLIContractTests(unittest.TestCase):
             b"\nTo activate a mode, add it to the list in the modes setting.\n",
         )
 
+    # source/rofi.c:564-595: the built-in filebrowser is accepted in the mode
+    # list and shown as enabled.
+    def test_filebrowser_is_an_enabled_builtin_mode(self):
+        result = self.run_rofi("rofi", "-modes", "filebrowser,a:/bin/echo")
+
+        self.assertEqual(result.returncode, 0)
+        self.assertIn(
+            b"The following modes are enabled:\n    \xe2\x80\xa2 filebrowser\n    \xe2\x80\xa2 a\n",
+            result.stderr,
+        )
+
     # source/rofi.c:832-835, 840-857: an unknown name in the mode list.
     def test_unknown_mode_diagnoses_and_exits_dataerr(self):
         result = self.run_rofi("rofi", "-modes", "a:/bin/echo,nope", "-show", "a")
