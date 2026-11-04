@@ -4,10 +4,17 @@ CLT_FRAMEWORKS := /Library/Developer/CommandLineTools/Library/Developer/Framewor
 TEST_FLAGS := -Xswiftc -F$(CLT_FRAMEWORKS) -Xlinker -F$(CLT_FRAMEWORKS) \
 	-Xlinker -rpath -Xlinker $(CLT_FRAMEWORKS)
 
-.PHONY: build test
+.PHONY: build lint test check
 
 build:
 	swift build
 
+lint:
+	swift format lint --configuration .swift-format --recursive --parallel --strict Package.swift Sources Tests
+
 test:
 	swift test $(TEST_FLAGS)
+
+check:
+	$(MAKE) lint
+	$(MAKE) test
