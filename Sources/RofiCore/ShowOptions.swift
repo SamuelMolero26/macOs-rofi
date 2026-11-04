@@ -49,7 +49,7 @@ public struct InvalidModeConfiguration: Error, Equatable, CustomStringConvertibl
 
 /// The `-show` command line: the mode list, which mode starts, and the chrome
 /// options read per mode.
-public struct ShowOptions: Equatable, Sendable {
+public struct ShowOptions: Sendable {
     public var modes: [ModeSpec] = []
     /// Per mode, `-display-<name>` or the name (source/mode.c:189-208).
     public var displayNames: [String] = []
@@ -60,6 +60,7 @@ public struct ShowOptions: Equatable, Sendable {
     public var sidebarMode = false
     /// Printed on stderr only when stdout is a terminal (source/rofi.c:533-545).
     public var warnings: [String] = []
+    public var match = MatchOptions()
 
     public init(arguments args: Arguments) throws {
         // xrmoptions.c:75-86 parses switchers, modi, then modes; the last one
@@ -89,7 +90,14 @@ public struct ShowOptions: Equatable, Sendable {
                 errors.append(notFound(token))
             }
         }
-        // Setup errors are shown before `-show` is read (source/rofi.c:885-888).
+        // config_sanity_check adds its error after setup_modes' (source/rofi.c:
+        // 1243-1250, 869-875); together they are shown before `-show` is read
+        // (source/rofi.c:885-888).
+        do {
+            match = try MatchOptions(arguments: args)
+        } catch {
+            errors.append("\(error)")
+        }
         if !errors.isEmpty { throw InvalidModeConfiguration(errors: errors) }
 
         // source/rofi.c:935-958; mode_lookup compares names exactly (161-168).
@@ -113,6 +121,21 @@ public struct ShowOptions: Equatable, Sendable {
         // built-ins there; here it works for every mode, as find_arg_str.
         displayNames = modes.map { args.string("-display-" + $0.name) ?? $0.name }
         sidebarMode = args.bool("sidebar-mode", default: sidebarMode)
+    }
+}
+
+extension ShowOptions {
+    /// `help_print_no_arguments` with its markup rendered away
+    /// (source/rofi.c:564-595). Every known mode is a listed script mode, so
+    /// none can be enabled.
+    public var unsureWhatToShow: String {
+        "Rofi is unsure what to show.\n\n"
+            + "Please specify the mode you want to show.\n\n"
+            + "    rofi -show {mode}\n\n"
+            + "The following modes are enabled:\n"
+            + modes.map { "    • \($0.name)\n" }.joined()
+            + "\nThe following modes can be enabled:\n"
+            + "\nTo activate a mode, add it to the list in the modes setting.\n"
     }
 }
 
