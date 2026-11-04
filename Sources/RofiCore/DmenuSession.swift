@@ -75,12 +75,13 @@ public struct DmenuSession: Sendable {
         return state
     }
 
-    /// The row text, behind its ballot under `-multi-select`
-    /// (source/modes/dmenu.c:365-376, 467-476).
+    /// The row's display string, behind its ballot under `-multi-select`
+    /// (source/modes/dmenu.c:365-411, 467-477).
     public func displayText(for match: DmenuMatch) -> String {
-        guard pipeline.multiSelect else { return match.row.text }
+        let text = pipeline.displayString(for: match.row)
+        guard pipeline.multiSelect else { return text }
         let ballot = toggledRows.contains(match.sourceIndex) ? pipeline.ballotSelected : pipeline.ballotUnselected
-        return ballot + match.row.text
+        return ballot + text
     }
 
     public mutating func updateQuery(_ query: String) -> DmenuCompletion? {

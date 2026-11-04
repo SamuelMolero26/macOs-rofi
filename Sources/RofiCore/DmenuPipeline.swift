@@ -14,6 +14,11 @@ public struct InvalidMatchingMethod: Error, Equatable, CustomStringConvertible {
     }
 }
 
+/// Which end of a row too long to fit gives way to an ellipsis.
+public enum EllipsizeMode: Equatable, Sendable {
+    case start, middle, end
+}
+
 /// One visible dmenu match and its position in the original input.
 public struct DmenuMatch: Equatable, Sendable {
     public let sourceIndex: Int
@@ -41,7 +46,7 @@ public struct DmenuPipeline: Sendable {
     /// Upstream's `display_name`: one string names both the prompt and the
     /// window, so `-p` and `-window-title` each change both.
     public var prompt = "dmenu"
-    /// Shown raw, unlike upstream's Pango markup (source/view.c:1762).
+    /// `-mesg`: always Pango markup (source/view.c:1760-1762).
     public var message: String?
     /// Visible result rows, or nil to keep the default panel size.
     public var lines: Int?
@@ -61,6 +66,19 @@ public struct DmenuPipeline: Sendable {
     /// Prefixes for toggled and untoggled rows under `-multi-select`.
     public var ballotSelected = "☑ "
     public var ballotUnselected = "☐ "
+    /// `-display-columns`: 1-based pieces of the display source to show, or
+    /// nil to show it whole.
+    public var displayColumns: [String]?
+    /// `-display-column-separator`: the case-insensitive regex that splits the
+    /// display source into columns.
+    public var displayColumnSeparator = "\t"
+    /// `-markup-rows`: rows are Pango markup, drawn styled and matched on
+    /// their text.
+    public var markupRows = false
+    /// `-password`: the query is masked.
+    public var password = false
+    /// Where long rows are cut (source/widgets/listview.c:804).
+    public var ellipsizeMode = EllipsizeMode.end
 
     /// The window title around `prompt` (source/view.c:1892-1894).
     public var windowTitle: String { "rofi - \(prompt)" }
@@ -125,6 +143,43 @@ public struct DmenuPipeline: Sendable {
         multiSelect = args.has("-multi-select")
         ballotSelected = args.string("-ballot-selected-str") ?? ballotSelected
         ballotUnselected = args.string("-ballot-unselected-str") ?? ballotUnselected
+        // The separator is only read with columns (source/modes/dmenu.c:659-664).
+        // g_strsplit splits "" into no items.
+        if let columns = args.string("-display-columns") {
+            displayColumns = columns.isEmpty ? [] : columns.components(separatedBy: ",")
+            displayColumnSeparator = args.string("-display-column-separator") ?? displayColumnSeparator
+        }
+        markupRows = args.has("-markup-rows")
+        password = args.has("-password")
+        // `-ellipsize-mode` is applied after `-keep-right`, and an unknown mode
+        // keeps the previous one (source/modes/dmenu.c:1039-1055).
+        // ponytail: rofi g_warning()s an unknown mode; it is dropped here.
+        if args.has("-keep-right") { ellipsizeMode = .start }
+        switch args.string("-ellipsize-mode")?.lowercased() {
+        case "start": ellipsizeMode = .start
+        case "middle": ellipsizeMode = .middle
+        case "end": ellipsizeMode = .end
+        default: break
+        }
+    }
+
+    /// How a row is shown, before any ballot: its `display` extra or else its
+    /// text, projected onto `-display-columns`. A list position after the
+    /// first is joined by a tab even when the one before it was out of range
+    /// (source/modes/dmenu.c:365-411).
+    public func displayString(for row: Row) -> String {
+        let source = row.display ?? row.text
+        guard let displayColumns else { return source }
+        let pieces = splitColumns(source, separator: displayColumnSeparator)
+        var result = ""
+        for (i, item) in displayColumns.enumerated() {
+            // `(unsigned int)g_ascii_strtoull(item, NULL, 10)`.
+            let index = Int(UInt32(truncatingIfNeeded: strtoull(item, nil, 10)))
+            guard index > 0 && index <= pieces.count else { continue }
+            if i > 0 { result += "\t" }
+            result += pieces[index - 1]
+        }
+        return result
     }
 
     /// The source row selected when the dialog opens: the first row matching
@@ -141,11 +196,18 @@ public struct DmenuPipeline: Sendable {
         return selectedRow
     }
 
-    /// Matches row text while retaining each row's original input position.
+    /// Interactive matching, retaining each row's original input position.
+    /// Under `-markup-rows` a row matches on its markup's text, and a row
+    /// whose markup is invalid never matches (source/modes/dmenu.c:668-708).
     public func matchingRows(in rows: [Row], query: String) -> [DmenuMatch] {
+        matchingRows(in: rows, query: query, text: markupRows ? { stripPangoMarkup($0.text) } : \.text)
+    }
+
+    private func matchingRows(in rows: [Row], query: String, text: (Row) -> String?) -> [DmenuMatch] {
         let matcher = Matcher(query: query, options: match)
         return rows.enumerated().compactMap { sourceIndex, row in
-            matcher.matches(row.text) ? DmenuMatch(sourceIndex: sourceIndex, row: row) : nil
+            guard let text = text(row), matcher.matches(text) else { return nil }
+            return DmenuMatch(sourceIndex: sourceIndex, row: row)
         }
     }
 
@@ -177,12 +239,13 @@ public struct DmenuPipeline: Sendable {
 
     /// The no-UI `rofi -dmenu -dump` projection, one output line per match
     /// (source/modes/dmenu.c:989-1034). Command-line shortcuts resolve first,
-    /// exactly as they do for the interactive path.
+    /// exactly as they do for the interactive path. Rows match on their raw
+    /// text, even under `-markup-rows`.
     public func dump(rows: [Row]) -> [String] {
         if let completion = shortcut(rows: rows) {
             return completion.output.map { [$0] } ?? []
         }
-        return matchingRows(in: rows, query: filter ?? "")
+        return matchingRows(in: rows, query: filter ?? "", text: \.text)
             .map { formattedOutput(for: $0, filter: filter) }
     }
 
@@ -220,6 +283,37 @@ private func parseMatching(_ value: String) throws -> MatchingMethod? {
         return method
     }
     return methods.first
+}
+
+/// `g_regex_split_simple(separator, string, G_REGEX_CASELESS, 0)`: empty pieces
+/// and capture groups are kept, an empty match splits between characters, ""
+/// splits into nothing, and an invalid pattern yields no pieces.
+// ponytail: ICU regex syntax stands in for PCRE, and an unmatched capture
+// group gives "" even after the last matched one, which GLib omits.
+private func splitColumns(_ string: String, separator: String) -> [String] {
+    guard !string.isEmpty,
+          let regex = try? NSRegularExpression(pattern: separator, options: .caseInsensitive) else { return [] }
+    let text = string as NSString
+    var pieces: [String] = []
+    var pieceStart = 0
+    var lastMatchWasEmpty = false
+    for match in regex.matches(in: string, range: NSRange(location: 0, length: text.length)) {
+        let range = match.range
+        // An empty match where the last piece ended splits nothing.
+        if range.length == 0 && range.location == pieceStart { continue }
+        pieces.append(text.substring(with: NSRange(location: pieceStart, length: range.location - pieceStart)))
+        for group in 1..<match.numberOfRanges {
+            let groupRange = match.range(at: group)
+            pieces.append(groupRange.location == NSNotFound ? "" : text.substring(with: groupRange))
+        }
+        pieceStart = NSMaxRange(range)
+        lastMatchWasEmpty = range.length == 0
+    }
+    // An empty match at the very end leaves no trailing piece.
+    if !(lastMatchWasEmpty && pieceStart == text.length) {
+        pieces.append(text.substring(from: pieceStart))
+    }
+    return pieces
 }
 
 /// Reads `fd` to the end and splits it into rows on `separator`.
