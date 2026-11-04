@@ -15,10 +15,11 @@ it is evidence, not a promise that Linux internals will be copied to macOS.
 5. Update the matrix status, divergence, and evidence in the same review.
 
 The current Swift baseline has T1–T5 complete, byte-oriented row ingestion, an
-executable `rofi -dmenu -dump` path, and a basic interactive AppKit dmenu panel.
-Non-dmenu invocations still fail through the unsupported stub path. The next
-feature finishes dmenu: asynchronous input, the remaining flags, and row
-metadata rendering.
+executable `rofi -dmenu -dump` path, and an interactive AppKit dmenu panel with
+asynchronous input, every flag `dmenu.c` reads, multi-select, and row metadata
+and Pango markup rendering. Non-dmenu invocations still fail through the
+unsupported stub path. Remaining dmenu gaps include custom-accept key bindings,
+match highlighting, score ordering, row icons, and configuration files.
 
 ## Compatibility classes
 
