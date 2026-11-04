@@ -82,6 +82,9 @@ public struct FileBrowserOpenFailure: Error, Equatable, Sendable {
         self.command = command
         self.reason = reason
     }
+
+    /// The error dialog text (helper.c:1428-1430), its markup rendered away.
+    public var dialogText: String { "Failed to execute: '\(command)'\nError: '\(reason)'" }
 }
 
 /// Opens `path` the way the browser's `command` does: `path` as the argument,
@@ -254,7 +257,7 @@ public final class FileBrowserMode: Mode {
                 // dialog (510-519, helper.c:1426-1434); here the failure is
                 // the message and the view stays open.
                 if case .failure(let error) = opener(item.path, currentDirectory) {
-                    failure = "Failed to execute: '\(error.command)'\nError: '\(error.reason)'"
+                    failure = error.dialogText
                     return .reload
                 }
                 return .exit
