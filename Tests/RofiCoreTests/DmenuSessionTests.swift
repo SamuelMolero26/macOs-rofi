@@ -1,5 +1,5 @@
-import Testing
 import RofiCore
+import Testing
 
 // Contract: dmenu startup and completion in rofi source/modes/dmenu.c:780-891
 // and 989-1034; formatted output in source/helper.c:1693-1731.
@@ -298,12 +298,13 @@ import RofiCore
     // Contract: rofi_view_set_selected_line maps a source row to its visible
     // position, or the first visible row when it is filtered out or out of
     // range (source/view.c:369-383, source/modes/dmenu.c:1056).
-    @Test(arguments: [
-        ([], 2, 2),
-        (["-filter", "e"], 2, 1),    // visible rows are apple, cherry
-        (["-filter", "e"], 1, 0),    // Banana is filtered out
-        ([], 9, 0),                  // out of range
-    ] as [([String], Int, Int)])
+    @Test(
+        arguments: [
+            ([], 2, 2),
+            (["-filter", "e"], 2, 1),  // visible rows are apple, cherry
+            (["-filter", "e"], 1, 0),  // Banana is filtered out
+            ([], 9, 0),  // out of range
+        ] as [([String], Int, Int)])
     func selectedRowSelectsItsVisiblePosition(flags: [String], row: Int, visible: Int) throws {
         let session = try makeSession(flags + ["-selected-row", String(row)])
 
@@ -332,9 +333,10 @@ import RofiCore
         let rows = fruit + [flagged]
         let session = try makeSession(["-a", "0,2", "-u", "1"], rows: rows)
 
-        #expect(session.matches.map { session.state(of: $0) } == [
-            .active, .urgent, .active, .urgent,
-        ])
+        #expect(
+            session.matches.map { session.state(of: $0) } == [
+                .active, .urgent, .active, .urgent,
+            ])
     }
 
     // Negative ranges resolve against the rows loaded so far, as upstream
@@ -502,9 +504,9 @@ import RofiCore
     }
 }
 
-private extension DmenuStart {
+extension DmenuStart {
     /// The session when `start` did not resolve a command-line shortcut.
-    var session: DmenuSession? {
+    fileprivate var session: DmenuSession? {
         if case .session(let session) = self { return session }
         return nil
     }

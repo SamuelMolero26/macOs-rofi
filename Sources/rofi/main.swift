@@ -74,5 +74,7 @@ case .completed(let completion):
     finish(completion)
 case .session(let session):
     // The reader dies with the process when `finish` exits.
-    finish(runDmenuPanel(session: session, streaming: pipeline.isAsync ? ({ [path] in openInput(path) }, pipeline.separator) : nil))
+    finish(
+        runDmenuPanel(
+            session: session, streaming: pipeline.isAsync ? ({ [path] in openInput(path) }, pipeline.separator) : nil))
 }

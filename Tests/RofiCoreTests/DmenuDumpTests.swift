@@ -1,6 +1,6 @@
 import Darwin
-import Testing
 import RofiCore
+import Testing
 
 // Contract: dmenu_mode_dialog -dump path, rofi source/modes/dmenu.c:989-1034;
 // options from source/modes/dmenu.c:550-560, 605-608 and source/helper.c:695-731.
@@ -36,7 +36,9 @@ import RofiCore
     }
 
     @Test func negateCharKeepsANonASCIIArgumentByte() throws {
-        let args = Arguments(rawArgv: [Array("rofi".utf8), Array("-dmenu".utf8), Array("-matching-negate-char".utf8), [0xC2]])
+        let args = Arguments(rawArgv: [
+            Array("rofi".utf8), Array("-dmenu".utf8), Array("-matching-negate-char".utf8), [0xC2],
+        ])
         #expect(try DmenuDump(arguments: args).match.negateByte == 0xC2)
     }
 

@@ -1,5 +1,5 @@
-import Testing
 import RofiCore
+import Testing
 
 // Contract: levenshtein (rofi source/helper.c:815-853). Lengths are code
 // points, as view.c:503 passes g_utf8_strlen. Expected values come from rofi's
@@ -29,7 +29,8 @@ import RofiCore
     }
 
     @Test func distanceCountsCodePointsNotGraphemes() {
-        #expect(levenshtein("é", "e\u{301}", caseSensitive: false) == 2, "precomposed vs decomposed: substitute + insert")
+        #expect(
+            levenshtein("é", "e\u{301}", caseSensitive: false) == 2, "precomposed vs decomposed: substitute + insert")
         #expect(levenshtein("日本", "日本語", caseSensitive: false) == 1)
     }
 }
@@ -88,7 +89,8 @@ import RofiCore
         #expect(fuzzyScore("a", String(repeating: "a", count: 257), caseSensitive: false) == sentinel)
         // 201 code points but 401 UTF-8 bytes: still scored; 'a' aligns at
         // index 200 with no bonus, so -(LEADING_GAP_SCORE * 200).
-        #expect(fuzzyScore("a", String(repeating: "é", count: 200) + "a", caseSensitive: false) == 800,
-                "the cap counts code points, not bytes")
+        #expect(
+            fuzzyScore("a", String(repeating: "é", count: 200) + "a", caseSensitive: false) == 800,
+            "the cap counts code points, not bytes")
     }
 }

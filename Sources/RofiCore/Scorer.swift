@@ -68,7 +68,8 @@ public func fuzzyScore(_ pattern: String, _ text: String, caseSensitive: Bool) -
     var dp = Array(repeating: minScore, count: str.count)
     // uleft/ulefts deliberately carry over from the previous row's last
     // column into the next row's first, exactly as in the C loop.
-    var uleft = 0, ulefts = 0
+    var uleft = 0
+    var ulefts = 0
     for pc in pattern.unicodeScalars {
         if isSpace(pc) {
             pstart = true

@@ -2,8 +2,8 @@
 // `_Testing_Foundation` cross-import overlay, which Command Line Tools ships
 // without a module. File I/O goes through Darwin and URL through member lookup.
 import Darwin
-import Testing
 import RofiCore
+import Testing
 
 // Contract: history_set, history_remove and history_get_list with their file
 // parsers and writer (rofi source/history.c:45-357, include/history.h:51-70).

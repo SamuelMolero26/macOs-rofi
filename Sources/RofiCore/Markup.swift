@@ -86,13 +86,17 @@ private final class MarkupBuilder: NSObject, XMLParserDelegate {
     var result: MarkupText {
         let utf8 = text.utf8
         let index = { utf8.index(utf8.startIndex, offsetBy: $0) }
-        return MarkupText(text: text, runs: runs.map {
-            MarkupRun(range: index($0.start)..<index($0.end), attributes: $0.attributes)
-        })
+        return MarkupText(
+            text: text,
+            runs: runs.map {
+                MarkupRun(range: index($0.start)..<index($0.end), attributes: $0.attributes)
+            })
     }
 
-    func parser(_ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?,
-                qualifiedName qName: String?, attributes attributeDict: [String: String] = [:]) {
+    func parser(
+        _ parser: XMLParser, didStartElement elementName: String, namespaceURI: String?,
+        qualifiedName qName: String?, attributes attributeDict: [String: String] = [:]
+    ) {
         var attributes = stack.last ?? MarkupAttributes()
         guard attributes.apply(tag: elementName, spanAttributes: attributeDict) else {
             valid = false
@@ -102,8 +106,10 @@ private final class MarkupBuilder: NSObject, XMLParserDelegate {
         stack.append(attributes)
     }
 
-    func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?,
-                qualifiedName qName: String?) {
+    func parser(
+        _ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?,
+        qualifiedName qName: String?
+    ) {
         stack.removeLast()
     }
 
@@ -123,9 +129,9 @@ private final class MarkupBuilder: NSObject, XMLParserDelegate {
 /// Pango's relative size step (`PANGO_SCALE_LARGE`).
 private let sizeStep = 1.2
 
-private extension MarkupAttributes {
+extension MarkupAttributes {
     /// Applies one opening tag; false for a tag Pango does not know.
-    mutating func apply(tag: String, spanAttributes: [String: String]) -> Bool {
+    fileprivate mutating func apply(tag: String, spanAttributes: [String: String]) -> Bool {
         switch tag {
         case "markup": break
         case "b": bold = true
@@ -151,7 +157,7 @@ private extension MarkupAttributes {
 
     /// One `<span>` attribute. Unknown names and unparsable values change
     /// nothing.
-    mutating func applySpan(_ name: String, _ value: String) {
+    fileprivate mutating func applySpan(_ name: String, _ value: String) {
         let keyword = value.lowercased()
         switch name {
         case "foreground", "fgcolor", "color":
@@ -179,11 +185,12 @@ private extension MarkupAttributes {
         }
     }
 
-    mutating func applySize(_ value: String) {
+    fileprivate mutating func applySize(_ value: String) {
         if let level = sizeLevels[value] {
-            scale = level < 0
+            scale =
+                level < 0
                 ? (0 ..< -level).reduce(1) { scale, _ in scale / sizeStep }
-                : (0 ..< level).reduce(1) { scale, _ in scale * sizeStep }
+                : (0..<level).reduce(1) { scale, _ in scale * sizeStep }
         } else if value == "larger" {
             scale *= sizeStep
         } else if value == "smaller" {
@@ -225,8 +232,9 @@ private func parseHexColor(_ value: String) -> MarkupColor? {
     guard [3, 4, 6, 8].contains(digits.count), digits.allSatisfy({ $0.isASCII && $0.isHexDigit }) else { return nil }
     let width = digits.count <= 4 ? 1 : 2
     let channels = stride(from: 0, to: digits.count, by: width).map { offset -> UInt8 in
-        let channel = UInt8(String(digits[offset ..< offset + width]), radix: 16)!
+        let channel = UInt8(String(digits[offset..<offset + width]), radix: 16)!
         return width == 1 ? channel * 17 : channel
     }
-    return MarkupColor(red: channels[0], green: channels[1], blue: channels[2], alpha: channels.count == 4 ? channels[3] : 255)
+    return MarkupColor(
+        red: channels[0], green: channels[1], blue: channels[2], alpha: channels.count == 4 ? channels[3] : 255)
 }

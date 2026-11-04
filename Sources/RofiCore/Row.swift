@@ -33,7 +33,8 @@ public struct Row: Equatable, Sendable {
             switch fields[i].lowercased() {
             case "icon":
                 // g_strsplit("") yields no items; inner empties are kept.
-                icons = value.isEmpty ? [] : value.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+                icons =
+                    value.isEmpty ? [] : value.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
             case "display": display = value
             case "meta": meta = value
             case "info": info = value

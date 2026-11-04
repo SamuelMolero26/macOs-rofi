@@ -192,8 +192,8 @@ public struct DmenuSession: Sendable {
     }
 }
 
-fileprivate extension DmenuPipeline {
-    func formattedCustomOutput(for query: String) -> String {
+extension DmenuPipeline {
+    fileprivate func formattedCustomOutput(for query: String) -> String {
         formatOutputLine(format, entry: query, index: -1, filter: query)
     }
 }

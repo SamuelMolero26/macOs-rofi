@@ -1,5 +1,5 @@
-import Testing
 import RofiCore
+import Testing
 
 // Contract: -markup-rows, -password, -keep-right and -ellipsize-mode reading
 // (source/modes/dmenu.c:986-1001, 1039-1055), the listview default
@@ -12,11 +12,12 @@ import RofiCore
 
     /// A session made by `start`, the production entry point.
     private func makeSession(_ argv: [String], _ lines: [String]) throws -> DmenuSession {
-        let session: DmenuSession? = if case .session(let session) = try pipeline(argv).start(rows: lines.map { Row(parsing: $0) }) {
-            session
-        } else {
-            nil
-        }
+        let session: DmenuSession? =
+            if case .session(let session) = try pipeline(argv).start(rows: lines.map { Row(parsing: $0) }) {
+                session
+            } else {
+                nil
+            }
         return try #require(session, "Expected an interactive dmenu session")
     }
 

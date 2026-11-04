@@ -1,5 +1,5 @@
-import Testing
 import RofiCore
+import Testing
 
 // Contract: dmenu_format_output_string (source/modes/dmenu.c:365-411), its
 // display source (469-477) and the option reading (659-664).
@@ -7,11 +7,12 @@ import RofiCore
     /// A session made by `start`, the production entry point.
     private func makeSession(_ argv: [String], _ lines: [String]) throws -> DmenuSession {
         let pipeline = try DmenuPipeline(arguments: Arguments(["rofi", "-dmenu"] + argv))
-        let session: DmenuSession? = if case .session(let session) = pipeline.start(rows: lines.map { Row(parsing: $0) }) {
-            session
-        } else {
-            nil
-        }
+        let session: DmenuSession? =
+            if case .session(let session) = pipeline.start(rows: lines.map { Row(parsing: $0) }) {
+                session
+            } else {
+                nil
+            }
         return try #require(session, "Expected an interactive dmenu session")
     }
 
@@ -39,8 +40,9 @@ import RofiCore
     }
 
     @Test func separatorIsACaseInsensitiveRegex() throws {
-        #expect(try displayed(["-display-columns", "3,2,1", "-display-column-separator", "[,;]"], ["a,b;c"])
-            == ["c\tb\ta"])
+        #expect(
+            try displayed(["-display-columns", "3,2,1", "-display-column-separator", "[,;]"], ["a,b;c"])
+                == ["c\tb\ta"])
         #expect(try displayed(["-display-columns", "2", "-display-column-separator", "x"], ["aXb"]) == ["b"])
     }
 
@@ -54,14 +56,16 @@ import RofiCore
         ("1", "\t", "", ""),
     ])
     func splittingFollowsGLib(columns: String, separator: String, line: String, expected: String) throws {
-        #expect(try displayed(["-display-columns", columns, "-display-column-separator", separator], [line])
-            == [expected])
+        #expect(
+            try displayed(["-display-columns", columns, "-display-column-separator", separator], [line])
+                == [expected])
     }
 
     @Test func invalidSeparatorShowsNothingButTheBallot() throws {
         #expect(try displayed(["-display-columns", "1", "-display-column-separator", "("], ["a"]) == [""])
-        #expect(try displayed(["-display-columns", "1", "-display-column-separator", "(", "-multi-select"], ["a"])
-            == ["☐ "])
+        #expect(
+            try displayed(["-display-columns", "1", "-display-column-separator", "(", "-multi-select"], ["a"])
+                == ["☐ "])
     }
 
     @Test func separatorIsIgnoredWithoutColumns() throws {
