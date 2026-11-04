@@ -92,6 +92,42 @@ import Testing
         ])
     }
 
+    // source/rofi.c:1243-1250, 869-888: config_sanity_check adds its error
+    // after setup_modes' and both share one dialog before `-show` is read.
+    @Test func matchingErrorFollowsSetupErrorsBeforeShow_rofi_c_885() throws {
+        let matching = try #require(errors(["-matching", "bogus"]).first)
+        #expect(matching.hasPrefix("The configuration failed to validate:\n\tconfig.matching=bogus"))
+        #expect(errors(["-modes", "run", "-matching", "bogus", "-show", "nope"]) == [
+            "Mode run is not found.\nThe following modes are known:\n",
+            matching,
+        ])
+        #expect(errors(["-modes", "a:x", "-matching", "bogus", "-show", "nope"]) == [matching])
+        #expect(try parse(["-matching", "fuzzy"]).match.method == .fuzzy)
+    }
+
+    // source/rofi.c:564-595: with no `-show` rofi says so and lists the
+    // enabled modes. Its markup is rendered away; only script modes exist,
+    // and all of them are enabled, so none can be enabled.
+    @Test func unsureWhatToShowListsTheEnabledModes_rofi_c_564() throws {
+        #expect(try parse(["-modes", "a:x,b:y,a:z"]).unsureWhatToShow == """
+            Rofi is unsure what to show.
+
+            Please specify the mode you want to show.
+
+                rofi -show {mode}
+
+            The following modes are enabled:
+                • a
+                • b
+                • a
+
+            The following modes can be enabled:
+
+            To activate a mode, add it to the list in the modes setting.
+
+            """)
+    }
+
     // source/rofi.c:840-857: the dialog shows two errors, and its count of the
     // rest is off by one.
     @Test func descriptionFollowsTheStartupErrorDialog_rofi_c_840() throws {
