@@ -8,8 +8,8 @@ upstream:
 swift_baseline:
   tasks_complete: [T1, T2, T3, T4, T5]
   next_task: CLI
-  executable: dmenu-only
-  appkit: dmenu-panel
+  executable: dmenu-and-script-show
+  appkit: dmenu-and-mode-panel
 
 milestones:
   T1: Swift package, executable stub, and separator parser
@@ -29,33 +29,33 @@ items:
     milestone: CLI
     risk: critical
     source_evidence: [source/rofi.c, source/xrmoptions.c, config/config.c, test/helper-config-cmdline-parser.c]
-    swift_evidence: [Package.swift, Sources/RofiCore/Arguments.swift, Sources/RofiCore/DmenuPipeline.swift, Sources/rofi/main.swift, Tests/RofiCoreTests/ArgumentsTests.swift, Tests/RofiCoreTests/DmenuDumpTests.swift, Tests/RofiCoreTests/DmenuPipelineTests.swift, Tests/RofiCoreTests/RenderingFlagsTests.swift, Tests/RofiCoreTests/DisplayColumnsTests.swift, Tests/CLITests/test_cli.py]
+    swift_evidence: [Package.swift, Sources/RofiCore/Arguments.swift, Sources/RofiCore/DmenuPipeline.swift, Sources/RofiCore/ShowOptions.swift, Sources/rofi/main.swift, Tests/RofiCoreTests/ArgumentsTests.swift, Tests/RofiCoreTests/DmenuDumpTests.swift, Tests/RofiCoreTests/DmenuPipelineTests.swift, Tests/RofiCoreTests/RenderingFlagsTests.swift, Tests/RofiCoreTests/DisplayColumnsTests.swift, Tests/RofiCoreTests/ShowOptionsTests.swift, Tests/CLITests/test_cli.py]
     oracle_need: required
     spike_need: none
     status: partial
-    divergence: Rofi-style argument lookup runs over the raw argv bytes, and every flag dmenu.c looks up is read, along with the -filter, -matching, -tokenize, -case-smart, -normalize-match, -matching-negate-char, and -auto-select options. Values used as bytes or C strings, such as -sep, -matching-negate-char, and -input, keep non-UTF-8 bytes. An argv[0] basename of exactly dmenu starts dmenu mode. An unknown -ellipsize-mode is dropped silently where rofi warns. No configuration file, -dump-config, -dump-theme, or help exists, and every non-dmenu invocation exits through the stub path.
+    divergence: Rofi-style argument lookup runs over the raw argv bytes, and every flag dmenu.c looks up is read, along with the -filter, -matching, -tokenize, -case-smart, -normalize-match, -matching-negate-char, and -auto-select options. Values used as bytes or C strings, such as -sep, -matching-negate-char, and -input, keep non-UTF-8 bytes. An argv[0] basename of exactly dmenu starts dmenu mode. An unknown -ellipsize-mode is dropped silently where rofi warns. Outside dmenu, -modes, -modi, and -switchers are read with -modes winning over -modi over -switchers, split on commas or hash signs with duplicates kept, along with -show, -display-<name>, -sidebar-mode, and the matching options including -case-sensitive. Only name:path script specs resolve; the default mode list is empty instead of window,drun,run,ssh, a bare name finds no script in the configuration directory, and built-in names are not found. -display-<name> applies to script modes, where upstream registers it after parsing the command line so it has no effect on them. The theme display-name property is not read. No configuration file, -dump-config, -dump-theme, -help, or -e exists; -help and -e fall through to the unsure-what-to-show text.
 
   - id: cli.diagnostics-and-exit-contract
     class: semantic
     milestone: CLI
     risk: high
     source_evidence: [source/rofi.c, source/modes/dmenu.c, doc/rofi.1.markdown, doc/rofi-dmenu.5.markdown]
-    swift_evidence: [Sources/rofi/main.swift, Sources/RofiCore/DmenuPipeline.swift, Sources/RofiCore/DmenuSession.swift, Sources/RofiCore/OutputFormat.swift, Tests/RofiCoreTests/DmenuDumpTests.swift, Tests/RofiCoreTests/DmenuSessionTests.swift, Tests/RofiCoreTests/OutputFormatTests.swift, Tests/CLITests/test_cli.py]
+    swift_evidence: [Sources/rofi/main.swift, Sources/RofiCore/DmenuPipeline.swift, Sources/RofiCore/DmenuSession.swift, Sources/RofiCore/OutputFormat.swift, Sources/RofiCore/ShowOptions.swift, Sources/RofiCore/ScriptMode.swift, Tests/RofiCoreTests/DmenuDumpTests.swift, Tests/RofiCoreTests/DmenuSessionTests.swift, Tests/RofiCoreTests/OutputFormatTests.swift, Tests/RofiCoreTests/ShowOptionsTests.swift, Tests/CLITests/test_cli.py]
     oracle_need: required
     spike_need: none
     status: partial
-    divergence: The dmenu dump path exits 0, including when no rows match; interactive accept exits 0 and cancel exits 1 through the shared outcome mapping. An invalid -matching value exits 65 (EX_DATAERR) and reports every unknown name and the too-many-methods error in config_sanity_check's wording with its markup removed. Diagnostics go to stderr instead of rofi's error dialog. Input-open failures exit 1 and are checked before the panel opens, so a path that becomes unreadable after that check fails with the panel already up. Help, configuration diagnostics, and other mode-specific exits are not implemented.
+    divergence: The dmenu dump path exits 0, including when no rows match; interactive accept exits 0 and cancel exits 1 through the shared outcome mapping. An invalid -matching value exits 65 (EX_DATAERR) and reports every unknown name and the too-many-methods error in config_sanity_check's wording with its markup removed. Diagnostics go to stderr, prefixed rofi:, instead of rofi's error dialog. Input-open failures exit 1 and are checked before the panel opens, so a path that becomes unreadable after that check fails with the panel already up. A -show panel prints nothing and exits 0 on accept and cancel. An unknown name in the mode list or -show reports "Mode X is not found" with the known modes and exits 65; mode-list and -matching errors share one startup message that shows two errors and upstream's off-by-one count of the rest. The disabled-mode warning for an unlisted -show script goes to stderr only when stdout is a terminal, as upstream. Without -show the unsure-what-to-show text goes to stderr and exits 0, listing no modes that can be enabled because no built-in mode exists. A script that cannot start at -show reports upstream's Failed to execute wording and exits 0 without a panel. Help, configuration diagnostics, and -e are not implemented.
 
   - id: mode.state-machine
     class: semantic
     milestone: CLI
     risk: critical
-    source_evidence: [include/mode.h, include/mode-private.h, source/mode.c, source/rofi.c, test/mode-test.c]
-    swift_evidence: []
+    source_evidence: [include/mode.h, include/mode-private.h, source/mode.c, source/rofi.c, source/view.c, source/widgets/listview.c, test/mode-test.c]
+    swift_evidence: [Sources/RofiCore/Mode.swift, Sources/RofiCore/ModeSwitcher.swift, Sources/RofiCore/ShowOptions.swift, Sources/RofiCore/ScriptMode.swift, Sources/RofiAppKit/ModePanel.swift, Sources/rofi/main.swift, Tests/RofiCoreTests/ModeSwitcherTests.swift, Tests/RofiCoreTests/ShowOptionsTests.swift, Tests/RofiCoreTests/ScriptModeTests.swift, Tests/CLITests/test_cli.py]
     oracle_need: targeted
     spike_need: targeted
-    status: planned
-    divergence: No mode protocol, transition reducer, reload path, or mode registry exists in Swift.
+    status: partial
+    divergence: A class-bound Mode protocol offers rows, a message, a display name, a post-result selection, token matching, and a result for ok, custom input, cancel, delete entry, and custom keys. The switcher resolves next, previous, and quick switch before a mode is asked, and applies exit, next, previous, reload, reset, and switch-to-index results with wraparound, an input rewrite or clear, and the query kept and refiltered across a switch. The visible selection is kept and clamped to the new matches. Every listed mode initializes before the panel opens, and the prompt, window title rofi - <display name>, and message follow the current mode. Only script modes exist, and dmenu does not run on the Mode protocol. Icons, completion, preprocess_input, and on_mode_changed are absent, and results are never sorted. Each list entry gets its own mode instance where upstream reuses one for a repeated bare name. Cancel passes no row where upstream passes a stale selected line, a negative switch index wraps where upstream's is unsigned, and a mode's requested row is looked up in the matches after the reload instead of before it.
 
   - id: matching.methods-and-tokenization
     class: exact
@@ -128,22 +128,22 @@ items:
     milestone: CLI
     risk: critical
     source_evidence: [source/modes/script.c, include/modes/script.h, doc/rofi-script.5.markdown, Examples/test_script_mode_delim.sh]
-    swift_evidence: [Sources/RofiCore/Separator.swift, Sources/RofiCore/ForceUTF8.swift, Sources/RofiCore/Row.swift, Sources/RofiCore/RowRange.swift, Sources/RofiCore/RowSplitter.swift, Tests/RofiCoreTests/SeparatorTests.swift, Tests/RofiCoreTests/ForceUTF8Tests.swift, Tests/RofiCoreTests/RowTests.swift, Tests/RofiCoreTests/RowRangeTests.swift, Tests/RofiCoreTests/RowSplitterTests.swift]
+    swift_evidence: [Sources/RofiCore/Separator.swift, Sources/RofiCore/ForceUTF8.swift, Sources/RofiCore/Row.swift, Sources/RofiCore/RowRange.swift, Sources/RofiCore/RowSplitter.swift, Sources/RofiCore/ScriptMode.swift, Sources/RofiCore/Matcher.swift, Tests/RofiCoreTests/SeparatorTests.swift, Tests/RofiCoreTests/ForceUTF8Tests.swift, Tests/RofiCoreTests/RowTests.swift, Tests/RofiCoreTests/RowRangeTests.swift, Tests/RofiCoreTests/RowSplitterTests.swift, Tests/RofiCoreTests/ScriptModeTests.swift, Tests/RofiCoreTests/MatcherTests.swift]
     oracle_need: required
     spike_need: targeted
     status: partial
-    divergence: Shared raw-byte delimiters, UTF-8 repair, row metadata, ranges, and incremental splitting exist; script headers, ROFI_DATA, subprocess I/O, hot keys, and reload responses do not.
+    divergence: Script output splits on the current delimiter, a delim header changes it for the records after it and persists across runs, empty records are dropped, and a header needs a value byte after its \x1f. Rows carry the shared row extras, row text is repaired to UTF-8, and display, active, and urgent extras reach the panel. The prompt, message, data, no-custom, and use-hot-keys headers are honored; an empty message clears it. The markup-rows, urgent, active, keep-selection, keep-filter, new-selection, theme, and switch-mode headers are parsed and ignored. Matching follows script_token_match, so a permanent row always matches and a token decided against the text is retried on the meta extra, but markup is not stripped first. Row extras decode invalid UTF-8 to U+FFFD, and the icon extra is not shown.
 
   - id: script.execution-and-reload
     class: semantic
     milestone: MODES
     risk: critical
     source_evidence: [source/modes/script.c, source/view.c, include/mode.h, Examples/test_script_mode.sh, Examples/test_script_env.sh]
-    swift_evidence: []
+    swift_evidence: [Sources/RofiCore/ScriptMode.swift, Sources/RofiCore/ModeSwitcher.swift, Sources/rofi/main.swift, Tests/RofiCoreTests/ScriptModeTests.swift, Tests/RofiCoreTests/ModeSwitcherTests.swift, Tests/CLITests/test_cli.py]
     oracle_need: required
     spike_need: required
-    status: planned
-    divergence: No script subprocess lifecycle, environment contract, action dispatch, reload, or selection retention exists.
+    status: partial
+    divergence: A name:path script runs once with no argument when the mode initializes, then with the accepted row's text, the custom input, or the deleted row, with ROFI_RETV 1, 2, 3, or 10 plus the custom key index, and ROFI_OUTSIDE, ROFI_INFO, ROFI_DATA, and ROFI_INPUT set. The command splits like g_shell_parse_argv without expansions and is searched on PATH, with stdin from /dev/null, stderr and the working directory inherited, and other descriptors closed; stdout is read to the end before the panel continues. New rows reload with source row 0 selected and the input cleared, empty output exits, a nonselectable row or refused custom input under no-custom reloads, and a custom key without use-hot-keys switches to that mode index. The argument is the row's UTF-8-repaired text, not its raw bytes, and the child is reaped where upstream never waits. keep-selection, keep-filter, and new-selection are not honored. The panel binds no kb-delete-entry or kb-custom keys, so delete and custom-key runs are reachable only from RofiCore. A spawn failure prints the error dialog's wording on stderr; at startup it exits 0 without a panel, and on a later run the mode ends with no rows and the message follows when the panel closes.
 
   - id: modes.run
     class: semantic
@@ -249,22 +249,22 @@ items:
     milestone: APPKIT
     risk: critical
     source_evidence: [source/view.c, source/widgets/widget.c, source/widgets/box.c, source/widgets/listview.c, source/widgets/textbox.c, test/widget-test.c, test/box-test.c, test/textbox-test.c]
-    swift_evidence: [Sources/RofiAppKit/DmenuPanel.swift, Sources/RofiAppKit/Markup+AppKit.swift, Sources/RofiCore/DmenuPipeline.swift, Sources/RofiCore/DmenuSession.swift, Sources/RofiCore/Markup.swift, Tests/RofiCoreTests/DmenuPipelineTests.swift, Tests/RofiCoreTests/DmenuSessionTests.swift, Tests/RofiCoreTests/DisplayColumnsTests.swift, Tests/RofiCoreTests/RenderingFlagsTests.swift, Tests/RofiCoreTests/MarkupTests.swift]
+    swift_evidence: [Sources/RofiAppKit/DmenuPanel.swift, Sources/RofiAppKit/PanelModel.swift, Sources/RofiAppKit/ModePanel.swift, Sources/RofiAppKit/Markup+AppKit.swift, Sources/RofiCore/DmenuPipeline.swift, Sources/RofiCore/DmenuSession.swift, Sources/RofiCore/ModeSwitcher.swift, Sources/RofiCore/Markup.swift, Tests/RofiCoreTests/DmenuPipelineTests.swift, Tests/RofiCoreTests/DmenuSessionTests.swift, Tests/RofiCoreTests/DisplayColumnsTests.swift, Tests/RofiCoreTests/RenderingFlagsTests.swift, Tests/RofiCoreTests/MarkupTests.swift, Tests/RofiCoreTests/ModeSwitcherTests.swift]
     oracle_need: required
     spike_need: required
     status: partial
-    divergence: A prompt label, search field, optional -mesg label, recycled-cell NSTableView, and an overlay label for "Loading.. " or the multi-select count render the session, with accessibility labels. -l fixes the visible row count. Rows show their display extra or -display-columns projection, ballots under -multi-select, blue active or red urgent text with active winning, and -ellipsize-mode or -keep-right truncation. Pango markup becomes an NSAttributedString for -markup-rows rows and for -mesg, invalid markup shows raw, and matching under -markup-rows uses the markup's text. Only hex colors are parsed, and the column separator is an ICU regex instead of PCRE. -password uses NSSecureTextField, which shows bullets instead of "*". Results keep input order because scoring is not wired, and match highlighting, row icons, and kb-ellipsize are absent. The AppKit target has no automated tests; manual and scripted smoke passed on 2026-11-02.
+    divergence: A prompt label, search field, optional -mesg label, recycled-cell NSTableView, and an overlay label for "Loading.. " or the multi-select count render the session, with accessibility labels. -l fixes the visible row count. Rows show their display extra or -display-columns projection, ballots under -multi-select, blue active or red urgent text with active winning, and -ellipsize-mode or -keep-right truncation. Pango markup becomes an NSAttributedString for -markup-rows rows and for -mesg, invalid markup shows raw, and matching under -markup-rows uses the markup's text. Only hex colors are parsed, and the column separator is an ICU regex instead of PCRE. -password uses NSSecureTextField, which shows bullets instead of "*". Under -show the same panel redraws after every switch and mode result. The prompt, window title, and message follow the current mode, the message bar appears and disappears with the message, and a query the mode rewrites replaces the field with the cursor at its end. -sidebar-mode adds a mode-switcher row below the list, an NSSegmentedControl with one equal-width segment per mode labeled with its display name when built and highlighting the current mode; it never takes focus. A theme cannot add that row because no theme is read. Results keep input order because scoring is not wired, and match highlighting, row icons, and kb-ellipsize are absent. The AppKit target has no automated tests; manual and scripted smoke passed on 2026-11-02 for dmenu and on 2026-11-04 for -show switching, wraparound, the kept query, reload on accept, and the switcher row.
 
   - id: display.panel-placement-and-focus
     class: native
     milestone: APPKIT
     risk: critical
     source_evidence: [source/display.c, source/xcb/display.c, source/wayland/display.c, source/xcb/view.c, source/wayland/view.c]
-    swift_evidence: [Sources/RofiAppKit/DmenuPanel.swift]
+    swift_evidence: [Sources/RofiAppKit/DmenuPanel.swift, Sources/RofiAppKit/PanelModel.swift, Sources/RofiAppKit/ModePanel.swift]
     oracle_need: targeted
     spike_need: required
     status: partial
-    divergence: An accessory app shows one borderless floating NSPanel, 640 points wide and centered, across all Spaces and full-screen spaces, and it stays visible when inactive. -b moves it to the bottom center of the visible frame instead of dmenu's full-width bar, -l or -mesg size it around a fixed row count capped at the screen height, and it never slides under the menu bar. Activation is forced and focus retried once on the next run-loop turn for the unbundled CLI; focus passed manual smoke. Screen selection, -location, -width, and multi-display policy are absent.
+    divergence: An accessory app shows one borderless floating NSPanel, 640 points wide and centered, across all Spaces and full-screen spaces, and it stays visible when inactive. -b moves it to the bottom center of the visible frame instead of dmenu's full-width bar, -l or -mesg size it around a fixed row count capped at the screen height, and it never slides under the menu bar. A -show panel always uses the default centered 640x420 size and ignores -l and -b, which upstream applies to every mode. Activation is forced and focus retried once on the next run-loop turn for the unbundled CLI; focus passed manual smoke. Screen selection, -location, -width, and multi-display policy are absent.
 
   - id: display.x11-and-wayland-backends
     class: unsupported
@@ -282,22 +282,22 @@ items:
     milestone: APPKIT
     risk: critical
     source_evidence: [source/keyb.c, include/input-codes.h, source/view.c, doc/rofi-keys.5.markdown, doc/rofi-actions.5.markdown]
-    swift_evidence: [Sources/RofiAppKit/DmenuPanel.swift, Sources/RofiCore/DmenuSession.swift, Tests/RofiCoreTests/DmenuSessionTests.swift]
+    swift_evidence: [Sources/RofiAppKit/DmenuPanel.swift, Sources/RofiAppKit/PanelModel.swift, Sources/RofiAppKit/ModePanel.swift, Sources/RofiCore/DmenuSession.swift, Sources/RofiCore/ModeSwitcher.swift, Tests/RofiCoreTests/DmenuSessionTests.swift, Tests/RofiCoreTests/ModeSwitcherTests.swift]
     oracle_need: required
     spike_need: required
     status: partial
-    divergence: Return, Shift+Return, Escape, Up, and Down are handled in the search field and ignored while text is marked. Shift+Return is kb-accept-alt, which toggles the row under -multi-select and otherwise accepts like Return. No action map, keybinding parser, kb-accept-custom, kb-accept-custom-alt, kb-ellipsize, Tab, paging, custom keys, or keyboard-layout policy exists.
+    divergence: Return, Shift+Return, Escape, Up, and Down are handled in the search field and ignored while text is marked. Shift+Return is kb-accept-alt, which toggles the row under -multi-select and otherwise accepts like Return; under -show it always accepts like Return. Up and Down stop at the first and last rows where upstream's default cycle wraps. Under -show, Control+Tab is kb-mode-next and Control+Shift+Tab is kb-mode-previous; Shift+Right and Shift+Left are not bound to mode switching and keep native text selection, a deliberate divergence from upstream's default bindings. In dmenu those keys keep their AppKit behavior. No action map, keybinding parser, kb-mode-complete, kb-accept-custom, kb-accept-custom-alt, kb-delete-entry, kb-custom keys, kb-ellipsize, Tab, paging, or keyboard-layout policy exists.
 
   - id: input.pointer-actions
     class: native
     milestone: APPKIT
     risk: high
     source_evidence: [source/keyb.c, source/view.c, source/widgets/listview.c, include/input-codes.h]
-    swift_evidence: []
+    swift_evidence: [Sources/RofiAppKit/DmenuPanel.swift, Sources/RofiAppKit/ModePanel.swift, Sources/RofiCore/ModeSwitcher.swift, Tests/RofiCoreTests/ModeSwitcherTests.swift]
     oracle_need: targeted
     spike_need: required
-    status: planned
-    divergence: The table inherits NSTableView click selection and scrolling, unverified at runtime. Double-click accept, hover, and pointer action dispatch are absent.
+    status: partial
+    divergence: Clicking a -sidebar-mode switcher segment switches to that mode as MENU_QUICK_SWITCH does, keeping the query; it acts on mouse-up where upstream acts on press, and passed scripted smoke on 2026-11-04. The table inherits NSTableView click selection and scrolling, unverified at runtime. Double-click accept, hover, and other pointer action dispatch are absent.
 
   - id: input.clipboard-and-ime
     class: native
@@ -337,11 +337,11 @@ items:
     milestone: CLI
     risk: critical
     source_evidence: [source/rofi.c, source/view.c, source/display.c, include/view.h, include/display.h]
-    swift_evidence: [Sources/RofiCore/Arguments.swift, Sources/RofiCore/DmenuPipeline.swift, Sources/RofiCore/DmenuSession.swift, Sources/RofiAppKit/DmenuPanel.swift, Sources/rofi/main.swift, Tests/RofiCoreTests/ArgumentsTests.swift, Tests/RofiCoreTests/DmenuDumpTests.swift, Tests/RofiCoreTests/DmenuSessionTests.swift, Tests/RofiCoreTests/RowReaderTests.swift, Tests/CLITests/test_cli.py]
+    swift_evidence: [Sources/RofiCore/Arguments.swift, Sources/RofiCore/DmenuPipeline.swift, Sources/RofiCore/DmenuSession.swift, Sources/RofiCore/ModeSwitcher.swift, Sources/RofiCore/ScriptMode.swift, Sources/RofiCore/ShowOptions.swift, Sources/RofiAppKit/DmenuPanel.swift, Sources/RofiAppKit/PanelModel.swift, Sources/RofiAppKit/ModePanel.swift, Sources/rofi/main.swift, Tests/RofiCoreTests/ArgumentsTests.swift, Tests/RofiCoreTests/DmenuDumpTests.swift, Tests/RofiCoreTests/DmenuSessionTests.swift, Tests/RofiCoreTests/RowReaderTests.swift, Tests/RofiCoreTests/ModeSwitcherTests.swift, Tests/RofiCoreTests/ScriptModeTests.swift, Tests/CLITests/test_cli.py]
     oracle_need: required
     spike_need: required
     status: partial
-    divergence: The dmenu process reads stdin or a named input file, opened from its raw argument bytes, writes output, reports option and open failures, and exits deterministically. Asynchronous input runs on a reader thread that ends with the process. The panel finishes through accept, cancel, or window close; -only-match keeps it open on cancel, and a -multi-select toggle keeps it open. Reload, child cleanup, signal handling, and a shared mode lifecycle do not exist.
+    divergence: The dmenu process reads stdin or a named input file, opened from its raw argument bytes, writes output, reports option and open failures, and exits deterministically. Asynchronous input runs on a reader thread that ends with the process. The panel finishes through accept, cancel, or window close; -only-match keeps it open on cancel, and a -multi-select toggle keeps it open. A -show process initializes every listed mode, runs one panel that stays open across switches and reloads until a mode answers exit, and reaps each script child. dmenu and -show share the panel through a panel model but not the mode lifecycle. Signal handling does not exist.
 
   - id: plugins.native-c-mode-abi
     class: deferred

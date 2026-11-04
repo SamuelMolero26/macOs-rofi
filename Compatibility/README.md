@@ -17,9 +17,12 @@ it is evidence, not a promise that Linux internals will be copied to macOS.
 The current Swift baseline has T1–T5 complete, byte-oriented row ingestion, an
 executable `rofi -dmenu -dump` path, and an interactive AppKit dmenu panel with
 asynchronous input, every flag `dmenu.c` reads, multi-select, and row metadata
-and Pango markup rendering. Non-dmenu invocations still fail through the
-unsupported stub path. Remaining dmenu gaps include custom-accept key bindings,
-match highlighting, score ordering, row icons, and configuration files.
+and Pango markup rendering. `rofi -show` runs a mode switcher over `name:path`
+script modes in the same panel, with Control+Tab and Control+Shift+Tab
+switching and an optional `-sidebar-mode` switcher row; the combi, run, drun,
+ssh, and window modes are not implemented. Remaining dmenu gaps include
+custom-accept key bindings, match highlighting, score ordering, row icons, and
+configuration files.
 
 ## Compatibility classes
 
