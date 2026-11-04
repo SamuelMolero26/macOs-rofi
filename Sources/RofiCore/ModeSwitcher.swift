@@ -59,6 +59,13 @@ public struct ModeSwitcher {
         selectedVisibleIndex = index.flatMap { matches.indices.contains($0) ? $0 : nil }
     }
 
+    /// kb-row-up/kb-row-down, clamped at the ends like the dmenu panel.
+    /// ponytail: upstream cycles at the ends (`cycle`, config/config.c:115).
+    public mutating func moveSelection(by offset: Int) {
+        guard let current = selectedVisibleIndex else { return }
+        selectedVisibleIndex = min(max(current + offset, 0), matches.count - 1)
+    }
+
     /// kb-mode-next (source/view.c:1122-1126, source/rofi.c:262-263).
     public mutating func next() {
         load((currentIndex + 1) % modes.count)
