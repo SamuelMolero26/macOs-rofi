@@ -66,7 +66,9 @@ public struct History: Sendable {
     /// by count descending, take the minimum before capping, then write.
     private func write(_ list: [Element]) {
         let sorted = list.enumerated()
-            .sorted { $0.element.index != $1.element.index ? $0.element.index > $1.element.index : $0.offset < $1.offset }
+            .sorted {
+                $0.element.index != $1.element.index ? $0.element.index > $1.element.index : $0.offset < $1.offset
+            }
             .map(\.element)
         var out: [UInt8] = []
         if let min = sorted.last?.index {
@@ -112,7 +114,7 @@ private func parseElement(_ line: [UInt8]) -> Element? {
     guard end > 0, buffer[end] != 0 else { return nil }
     let start = end + 1
     guard l - start >= 2 else { return nil }
-    return (index, Array(line[start ..< l - 1].prefix { $0 != 0 }))
+    return (index, Array(line[start..<l - 1].prefix { $0 != 0 }))
 }
 
 /// `__history_get_element_list_fields` (source/history.c:80-130): everything
@@ -120,5 +122,5 @@ private func parseElement(_ line: [UInt8]) -> Element? {
 private func parseField(_ line: [UInt8]) -> [UInt8]? {
     guard let space = line.prefix(while: { $0 != 0 }).firstIndex(of: 0x20) else { return nil }
     let start = space + 1
-    return Array(line[start ..< max(start, line.count - 1)].prefix { $0 != 0 })
+    return Array(line[start..<max(start, line.count - 1)].prefix { $0 != 0 })
 }

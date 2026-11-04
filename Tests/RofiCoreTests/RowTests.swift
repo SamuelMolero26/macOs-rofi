@@ -1,5 +1,5 @@
-import Testing
 import RofiCore
+import Testing
 
 // Contract: dmenuscript_parse_entry_extras, rofi source/modes/script.c:89-131,
 // and the NUL split in source/modes/dmenu.c:176-189.
@@ -13,7 +13,8 @@ import RofiCore
     }
 
     @Test func extrasAfterNulAreKeyValuePairs() {
-        let row = Row(parsing: "ff\0icon\u{1F}firefox,web\u{1F}display\u{1F}Firefox\u{1F}meta\u{1F}browser\u{1F}info\u{1F}id-1")
+        let row = Row(
+            parsing: "ff\0icon\u{1F}firefox,web\u{1F}display\u{1F}Firefox\u{1F}meta\u{1F}browser\u{1F}info\u{1F}id-1")
         #expect(row.text == "ff")
         #expect(row.icons == ["firefox", "web"])
         #expect(row.display == "Firefox")
@@ -22,7 +23,8 @@ import RofiCore
     }
 
     @Test func keysAndBooleanValuesAreCaseInsensitive() {
-        let row = Row(parsing: "x\0NonSelectable\u{1F}TRUE\u{1F}permanent\u{1F}true\u{1F}URGENT\u{1F}True\u{1F}active\u{1F}yes")
+        let row = Row(
+            parsing: "x\0NonSelectable\u{1F}TRUE\u{1F}permanent\u{1F}true\u{1F}URGENT\u{1F}True\u{1F}active\u{1F}yes")
         #expect(row.nonselectable && row.permanent && row.urgent)
         #expect(!row.active, "only the word true enables a flag")
     }

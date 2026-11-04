@@ -1,6 +1,6 @@
 import Darwin
-import Testing
 import RofiCore
+import Testing
 
 // Contract: dmenu_mode_dialog -dump path, rofi source/modes/dmenu.c:989-1034;
 // options from source/modes/dmenu.c:550-560, 605-608 and source/helper.c:695-731.

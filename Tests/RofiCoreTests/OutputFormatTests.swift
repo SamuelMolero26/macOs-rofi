@@ -1,5 +1,5 @@
-import Testing
 import RofiCore
+import Testing
 
 // Contract: rofi_output_formatted_line (rofi source/helper.c:1693-1731) and the
 // dmenu exit codes (source/modes/dmenu.c:796-802, 888-891).

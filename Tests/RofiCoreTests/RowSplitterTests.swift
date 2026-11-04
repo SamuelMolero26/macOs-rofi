@@ -1,5 +1,5 @@
-import Testing
 import RofiCore
+import Testing
 
 // Contract: read_input_sync and read_input_thread,
 // rofi source/modes/dmenu.c:246-346.

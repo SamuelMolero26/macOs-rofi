@@ -1,5 +1,5 @@
-import Testing
 import RofiCore
+import Testing
 
 // Contract: helper_tokenize, create_regex, glob/fuzzy/prefix_to_regex and
 // helper_token_match (rofi source/helper.c:154-322, 541-560), plus

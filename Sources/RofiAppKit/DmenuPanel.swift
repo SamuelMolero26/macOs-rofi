@@ -289,10 +289,11 @@ import os
         let rowsConstraint = scrollView.heightAnchor.constraint(equalToConstant: min(rowsHeight, maximumHeight))
         rowsConstraint.priority = .dragThatCannotResizeWindow
         rowsConstraint.isActive = true
-        panel.setContentSize(NSSize(
-            width: Layout.panelSize.width,
-            height: min(contentView.fittingSize.height, maximumHeight)
-        ))
+        panel.setContentSize(
+            NSSize(
+                width: Layout.panelSize.width,
+                height: min(contentView.fittingSize.height, maximumHeight)
+            ))
     }
 
     /// Runs on the reader thread. Batches coalesce into one outstanding drain.
@@ -356,7 +357,7 @@ import os
 
     private func restoreCoreSelection() {
         guard let index = session.selectedVisibleIndex,
-              tableView.numberOfRows > index
+            tableView.numberOfRows > index
         else {
             tableView.deselectAll(nil)
             return
@@ -394,7 +395,8 @@ extension DmenuPanelController {
 extension DmenuPanelController: NSTextFieldDelegate {
     func controlTextDidChange(_ notification: Notification) {
         if let editor = searchField.currentEditor() as? NSTextView,
-           editor.hasMarkedText() {
+            editor.hasMarkedText()
+        {
             return
         }
         let completion = session.updateQuery(searchField.stringValue)

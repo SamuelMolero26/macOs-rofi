@@ -1,8 +1,8 @@
 import Darwin
 import Dispatch
+import RofiCore
 import Testing
 import os
-import RofiCore
 
 // Contract: rofi's input thread, source/modes/dmenu.c:246-346. A broken reader
 // shows up as a missing delivery, so the time limit turns that hang into a failure.

@@ -27,7 +27,8 @@ public struct Matcher {
     public init(query: String, options: MatchOptions) {
         let caseSensitive = isCaseSensitive(query: query, options: options)
         // strtok on " " only: tabs never split, empty tokens are skipped.
-        let parts = options.tokenize
+        let parts =
+            options.tokenize
             ? query.split(separator: " ").map(String.init)
             : (query.isEmpty ? [] : [query])
         tokens = parts.map { compile($0, options, caseSensitive) }
@@ -55,13 +56,14 @@ private func compile(_ token: String, _ options: MatchOptions, _ caseSensitive: 
 {
     let invert = token.first == options.negateChar
     let text = invert ? String(token.dropFirst()) : token
-    let pattern = switch options.method {
-    case .normal: escapeRegex(text)
-    case .regex: text
-    case .glob: globToRegex(text)
-    case .fuzzy: fuzzyToRegex(text)
-    case .prefix: "\\b" + escapeRegex(text)
-    }
+    let pattern =
+        switch options.method {
+        case .normal: escapeRegex(text)
+        case .regex: text
+        case .glob: globToRegex(text)
+        case .fuzzy: fuzzyToRegex(text)
+        case .prefix: "\\b" + escapeRegex(text)
+        }
     // An invalid regex falls back to the literal text, as in create_regex.
     // The escaped fallback always compiles.
     let regex = makeRegex(pattern, options, caseSensitive) ?? makeRegex(escapeRegex(text), options, caseSensitive)!

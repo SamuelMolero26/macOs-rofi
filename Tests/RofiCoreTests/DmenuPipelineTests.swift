@@ -1,5 +1,5 @@
-import Testing
 import RofiCore
+import Testing
 
 // Contract: dmenu matching and dump projection in rofi
 // source/modes/dmenu.c:605-608 and 989-1034; formatted output in
@@ -192,15 +192,16 @@ import RofiCore
 
     // Contract: find_arg_uint into selected_line, whose UINT32_MAX default
     // means no row (source/modes/dmenu.c:548, 555; source/helper.c:373-380).
-    @Test(arguments: [
-        ([], nil),
-        (["-selected-row", "2"], 2),
-        (["-selected-row", "abc"], 0),           // strtoul garbage is 0
-        (["-selected-row", "4294967298"], 2),    // narrowed to unsigned int
-        (["-selected-row", "4294967295"], nil),  // UINT32_MAX is the "none" sentinel
-        (["-selected-row", "-1"], nil),          // a sign wraps to UINT32_MAX
-        (["-selected-row"], nil),                // no value: find_arg_uint leaves the default
-    ] as [([String], Int?)])
+    @Test(
+        arguments: [
+            ([], nil),
+            (["-selected-row", "2"], 2),
+            (["-selected-row", "abc"], 0),  // strtoul garbage is 0
+            (["-selected-row", "4294967298"], 2),  // narrowed to unsigned int
+            (["-selected-row", "4294967295"], nil),  // UINT32_MAX is the "none" sentinel
+            (["-selected-row", "-1"], nil),  // a sign wraps to UINT32_MAX
+            (["-selected-row"], nil),  // no value: find_arg_uint leaves the default
+        ] as [([String], Int?)])
     func selectedRowReadsLikeFindArgUint(flags: [String], row: Int?) throws {
         #expect(try pipeline(flags).selectedRow == row)
     }
@@ -224,17 +225,18 @@ import RofiCore
     // Contract: -select tokenizes with the configured matching and picks the
     // first matching entry, overriding -selected-row only on a match
     // (source/modes/dmenu.c:1005-1017).
-    @Test(arguments: [
-        ([], nil),
-        (["-selected-row", "1"], 1),
-        (["-select", "rr"], 2),
-        (["-select", "a"], 0),                        // first match wins
-        (["-select", "b"], nil),                      // dmenu is case-sensitive without -i
-        (["-select", "b", "-i"], 1),
-        (["-select", "zzz", "-selected-row", "2"], 2), // no match keeps -selected-row
-        (["-select", "rr", "-selected-row", "0"], 2),
-        (["-select", "^c", "-matching", "regex"], 2),
-    ] as [([String], Int?)])
+    @Test(
+        arguments: [
+            ([], nil),
+            (["-selected-row", "1"], 1),
+            (["-select", "rr"], 2),
+            (["-select", "a"], 0),  // first match wins
+            (["-select", "b"], nil),  // dmenu is case-sensitive without -i
+            (["-select", "b", "-i"], 1),
+            (["-select", "zzz", "-selected-row", "2"], 2),  // no match keeps -selected-row
+            (["-select", "rr", "-selected-row", "0"], 2),
+            (["-select", "^c", "-matching", "regex"], 2),
+        ] as [([String], Int?)])
     func initialSelectionResolvesSelectThenSelectedRow(flags: [String], row: Int?) throws {
         #expect(try pipeline(flags).initialSelection(in: fruit) == row)
     }

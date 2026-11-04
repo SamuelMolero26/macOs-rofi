@@ -1,5 +1,5 @@
-import Testing
 import RofiCore
+import Testing
 
 // Contract: find_arg, find_arg_str, find_arg_char, rofi source/helper.c:325-342, 431-439;
 // boolean options, rofi source/xrmoptions.c:760-771.
