@@ -37,7 +37,8 @@ public enum ModeResult: Equatable, Sendable {
 /// reference: `result` changes what `rows` returns next (a script mode re-runs
 /// its script), and one mode can sit in the switcher more than once.
 ///
-/// ponytail: no icons, completion or preprocess_input yet.
+/// ponytail: no completion or preprocess_input yet; icons are file paths
+/// only, no theme icon names.
 public protocol Mode: AnyObject {
     var name: String { get }
     /// The rows offered now, re-read after every switch and reload
@@ -55,6 +56,9 @@ public protocol Mode: AnyObject {
     var selectedRowAfterResult: Int? { get }
     /// `_token_match`; by default the row's text must match.
     func matches(_ row: Row, matcher: Matcher) -> Bool
+    /// `_get_icon` (source/mode.c:87-96) as the file whose Finder icon a
+    /// source row shows; nil for none, the default.
+    func iconPath(at row: Int) -> String?
     /// `_result`. `input` is the query: set it to replace the query, or to nil
     /// to clear it. `selectedRow` is the source row, or nil when none applies.
     func result(_ action: MenuAction, input: inout String?, selectedRow: Int?) -> ModeResult
@@ -64,6 +68,7 @@ extension Mode {
     public var message: String? { nil }
     public var displayName: String? { nil }
     public var selectedRowAfterResult: Int? { nil }
+    public func iconPath(at row: Int) -> String? { nil }
 
     public func matches(_ row: Row, matcher: Matcher) -> Bool {
         matcher.matches(row.text)

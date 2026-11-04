@@ -66,6 +66,8 @@ public struct ShowOptions: Sendable {
     public var startIndex: Int?
     /// `-sidebar-mode` (source/xrmoptions.c:388-395, config/config.c:119).
     public var sidebarMode = false
+    /// `-show-icons` (source/xrmoptions.c:145, config/config.c:47).
+    public var showIcons = false
     /// Printed on stderr only when stdout is a terminal (source/rofi.c:533-545).
     public var warnings: [String] = []
     public var match = MatchOptions()
@@ -145,6 +147,7 @@ public struct ShowOptions: Sendable {
         // built-ins there; here it works for every mode, as find_arg_str.
         displayNames = modes.map { args.string("-display-" + $0.name) ?? $0.name }
         sidebarMode = args.bool("sidebar-mode", default: sidebarMode)
+        showIcons = args.bool("show-icons", default: showIcons)
     }
 }
 

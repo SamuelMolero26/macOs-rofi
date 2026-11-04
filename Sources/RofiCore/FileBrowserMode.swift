@@ -129,7 +129,7 @@ public func openWithSystemOpener(path: String, directory: String) -> Result<Void
 ///
 /// ponytail: upstream's theme properties `sorting-method` (time sorts),
 /// `directories-first`, `command` and `cancel-returns-1`, the cache file that
-/// remembers the last directory (422-453, 523-527), icons, the completer
+/// remembers the last directory (422-453, 523-527), the completer
 /// (673-722) and the alternate accept key (494-495, 511, 534-542) are not
 /// implemented; names sort like Finder, not glib's collate keys.
 public final class FileBrowserMode: Mode {
@@ -184,6 +184,16 @@ public final class FileBrowserMode: Mode {
     private func display(_ item: Listing) -> String? {
         if item.kind == .up { return " .." }
         return item.isLink ? "@" + item.name : nil
+    }
+
+    /// `_get_icon` (filebrowser.c:620-638) by path: the up row shows the
+    /// parent folder, the root itself at the root.
+    /// ponytail: Finder icons only; upstream's image and thumbnail previews
+    /// are not drawn.
+    public func iconPath(at row: Int) -> String? {
+        guard listing.indices.contains(row) else { return nil }
+        let item = listing[row]
+        return item.kind == .up ? parent(of: currentDirectory) ?? currentDirectory : item.path
     }
 
     /// `get_file_browser` (filebrowser.c:241-358). An unreadable directory

@@ -214,4 +214,12 @@ private func file(_ name: String) -> FileBrowserEntry {
         #expect(act(mode, .customInput, input: nil) == .exit)
         #expect(act(mode, .customInput, input: "") == .exit)
     }
+
+    // An entry's icon is its bundle's, standing in for the desktop file's
+    // Icon key (drun.c:790, 1557-1580).
+    @Test func iconPathIsTheBundlePath() {
+        let mode = make()
+        #expect(mode.iconPath(at: row(mode, "Nested")) == "/Applications/Folder/Nested.app")
+        #expect(mode.iconPath(at: mode.rows.count) == nil)
+    }
 }
