@@ -11,3 +11,4 @@ build:
 
 test:
 	swift test $(TEST_FLAGS)
+	python3 Tests/CLITests/test_cli.py

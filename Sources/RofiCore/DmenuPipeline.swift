@@ -1,16 +1,16 @@
 import Foundation
 
-/// `-matching` named a method rofi does not know (source/helper.c:726-731).
-public struct InvalidMatchingMethod: Error, Equatable, CustomStringConvertible {
-    public let name: String
+/// `-matching` failed rofi's `config_sanity_check` (source/helper.c:671-780),
+/// which collects one line per error. Its Pango markup is rendered away, as in
+/// the error dialog that shows it (source/rofi.c:855, source/view.c:1993).
+public struct InvalidMatchingConfiguration: Error, Equatable, CustomStringConvertible {
+    public let errors: [String]
 
-    public init(name: String) {
-        self.name = name
-    }
+    /// rofi's error dialog sets `EX_DATAERR` (source/rofi.c:857).
+    public var exitStatus: Int32 { EX_DATAERR }
 
     public var description: String {
-        "config.matching=\(name) is not a valid matching strategy.\n"
-            + "Valid options are: glob, regex, fuzzy, prefix or normal."
+        "The configuration failed to validate:\n" + errors.joined() + "Please update your configuration."
     }
 }
 
@@ -106,11 +106,7 @@ public struct DmenuPipeline: Sendable {
         match.tokenize = args.bool("tokenize", default: match.tokenize)
         match.caseSmart = args.bool("case-smart", default: match.caseSmart)
         match.normalize = args.bool("normalize-match", default: match.normalize)
-        // ponytail: a byte above 0x7F maps to its Latin-1 scalar, while rofi
-        // compares it against the token's first raw byte.
-        if let negate = args.char("-matching-negate-char") {
-            match.negateChar = Character(Unicode.Scalar(negate))
-        }
+        match.negateByte = args.char("-matching-negate-char") ?? match.negateByte
         // dmenu forces case sensitivity on unless `-i`, whatever
         // `-case-sensitive` said (source/modes/dmenu.c:605-608).
         match.caseSensitive = !args.has("-i")
@@ -271,18 +267,28 @@ public typealias DmenuDump = DmenuPipeline
 private let defaultMenuLines: UInt32 = 15
 
 /// `config.matching`: every comma-separated name must be valid (ASCII case
-/// ignored); the first one is used (source/helper.c:695-731). `""` splits
-/// into no names, which returns nil and keeps the default.
-// ponytail: rofi also rejects five or more names ("to many matching options").
+/// ignored); the first one is used. The fifth recognized name is an error and
+/// ends the scan (source/helper.c:695-731). `""` splits into no names, which
+/// returns nil and keeps the default.
 private func parseMatching(_ value: String) throws -> MatchingMethod? {
     let names = value.isEmpty ? [] : value.split(separator: ",", omittingEmptySubsequences: false)
-    let methods = try names.map { name in
+    var firstMethod: MatchingMethod?
+    var recognizedCount = 0
+    var errors: [String] = []
+    for name in names where recognizedCount < 5 {
         guard let method = MatchingMethod(rawValue: name.lowercased()) else {
-            throw InvalidMatchingMethod(name: String(name))
+            errors.append("\tconfig.matching=\(name) is not a valid matching strategy.\n"
+                + "Valid options are: glob, regex, fuzzy, prefix or normal.\n")
+            continue
         }
-        return method
+        firstMethod = firstMethod ?? method
+        recognizedCount += 1
+        if recognizedCount == 5 {
+            errors.append("\tconfig.matching = \(value) to many matching options enabled.\n")
+        }
     }
-    return methods.first
+    if !errors.isEmpty { throw InvalidMatchingConfiguration(errors: errors) }
+    return firstMethod
 }
 
 /// `g_regex_split_simple(separator, string, G_REGEX_CASELESS, 0)`: empty pieces

@@ -21,6 +21,14 @@ import RofiCore
         #expect(parseSeparator("\\x41zz") == 0x41)
     }
 
+    @Test(arguments: [
+        ("\\x 41", 0x41), ("\\x+41", 0x41), ("\\x-1", 0xFF),
+        ("\\x0x41", 0x41), ("\\x8000000000000000", 0xFF),
+    ])
+    func hexEscapeUsesStrtolSyntaxAndOverflow(arg: String, expected: Int) {
+        #expect(parseSeparator(arg) == UInt8(expected))
+    }
+
     @Test func hexEscapeTruncatesToOneByteLikeCCharCast() {
         #expect(parseSeparator("\\x1FF") == 0xFF)
     }
