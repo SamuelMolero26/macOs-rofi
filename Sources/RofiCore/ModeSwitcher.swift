@@ -38,7 +38,13 @@ public struct ModeSwitcher {
 
     public var current: any Mode { modes[currentIndex] }
     /// The prompt shows the display name (source/view.c:222-227).
-    public var prompt: String { displayNames[currentIndex] }
+    public var prompt: String { displayName(at: currentIndex) }
+
+    /// `mode_get_display_name` (source/mode.c:189-203): the mode's own name
+    /// first, then `-display-<name>` or the name.
+    public func displayName(at index: Int) -> String {
+        modes[index].displayName ?? displayNames[index]
+    }
     /// source/view.c:2156-2159.
     public var windowTitle: String { "rofi - \(prompt)" }
     public var message: String? { current.message }
@@ -91,7 +97,9 @@ public struct ModeSwitcher {
         // ponytail: cancel passes no row; upstream passes a stale selected_line.
         let selectedRow = action == .customInput || action == .cancel ? nil : highlightedSourceIndex
         var input: String? = query
-        let result = current.result(action, input: &input, selectedRow: selectedRow)
+        let mode = current
+        let result = mode.result(action, input: &input, selectedRow: selectedRow)
+        let requestedRow = mode.selectedRowAfterResult
         // source/rofi.c:243-251: nil clears the input, anything else replaces it.
         query = input ?? ""
         switch result {
@@ -112,6 +120,12 @@ public struct ModeSwitcher {
             load(currentIndex)
         case .switchTo(let index):
             switchTo(index)
+        }
+        if let requestedRow {
+            // ponytail: upstream searches the matches from before the reload,
+            // then clamps. Unsorted, source row 0 (the only row script mode
+            // requests so far) lands on the first visible row either way.
+            selectedVisibleIndex = matches.isEmpty ? nil : matches.firstIndex { $0.sourceIndex == requestedRow } ?? 0
         }
         return isOpen
     }
