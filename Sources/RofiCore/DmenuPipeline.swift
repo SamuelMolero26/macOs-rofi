@@ -100,13 +100,7 @@ public struct DmenuPipeline: Sendable {
         format = args.string("-format") ?? format
         separator = args.char("-sep") ?? separator
         filter = args.string("-filter")
-        if let matching = args.string("-matching") {
-            match.method = try parseMatching(matching) ?? match.method
-        }
-        match.tokenize = args.bool("tokenize", default: match.tokenize)
-        match.caseSmart = args.bool("case-smart", default: match.caseSmart)
-        match.normalize = args.bool("normalize-match", default: match.normalize)
-        match.negateByte = args.char("-matching-negate-char") ?? match.negateByte
+        match = try MatchOptions(arguments: args)
         // dmenu forces case sensitivity on unless `-i`, whatever
         // `-case-sensitive` said (source/modes/dmenu.c:605-608).
         match.caseSensitive = !args.has("-i")
@@ -267,6 +261,23 @@ public typealias DmenuDump = DmenuPipeline
 
 /// `DEFAULT_MENU_LINES` (include/settings.h:231).
 private let defaultMenuLines: UInt32 = 15
+
+extension MatchOptions {
+    /// The matching options every mode reads from the command line
+    /// (source/xrmoptions.c, defaults in config/config.c:108-178). dmenu then
+    /// overrides case sensitivity (source/modes/dmenu.c:605-608).
+    public init(arguments args: Arguments) throws {
+        self.init()
+        if let matching = args.string("-matching") {
+            method = try parseMatching(matching) ?? method
+        }
+        tokenize = args.bool("tokenize", default: tokenize)
+        caseSmart = args.bool("case-smart", default: caseSmart)
+        normalize = args.bool("normalize-match", default: normalize)
+        negateByte = args.char("-matching-negate-char") ?? negateByte
+        caseSensitive = args.bool("case-sensitive", default: caseSensitive)
+    }
+}
 
 /// `config.matching`: every comma-separated name must be valid (ASCII case
 /// ignored); the first one is used. The fifth recognized name is an error and

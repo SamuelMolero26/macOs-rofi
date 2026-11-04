@@ -1,3 +1,5 @@
+import os
+import pty
 import subprocess
 import tempfile
 import unittest
@@ -35,9 +37,99 @@ class CLIContractTests(unittest.TestCase):
         for argv0 in ("bin/Dmenu", "rofi"):
             with self.subTest(argv0=argv0):
                 result = self.run_rofi(argv0, "-dump")
-                self.assertEqual(result.returncode, 1)
+                self.assertEqual(result.returncode, 0)
                 self.assertEqual(result.stdout, b"")
-                self.assertEqual(result.stderr, b"rofi: not implemented yet\n")
+                self.assertTrue(result.stderr.startswith(b"rofi: Rofi is unsure what to show.\n"))
+
+    # source/rofi.c:564-595, 956-958: no -show explains itself and exits 0.
+    def test_no_show_is_unsure_what_to_show_and_exits_zero(self):
+        result = self.run_rofi("rofi", "-modes", "a:/bin/echo")
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, b"")
+        self.assertEqual(
+            result.stderr,
+            b"rofi: Rofi is unsure what to show.\n\n"
+            b"Please specify the mode you want to show.\n\n"
+            b"    rofi -show {mode}\n\n"
+            b"The following modes are enabled:\n"
+            b"    \xe2\x80\xa2 a\n"
+            b"\nThe following modes can be enabled:\n"
+            b"\nTo activate a mode, add it to the list in the modes setting.\n",
+        )
+
+    # source/rofi.c:832-835, 840-857: an unknown name in the mode list.
+    def test_unknown_mode_diagnoses_and_exits_dataerr(self):
+        result = self.run_rofi("rofi", "-modes", "a:/bin/echo,nope", "-show", "a")
+
+        self.assertEqual(result.returncode, 65)
+        self.assertEqual(result.stdout, b"")
+        self.assertEqual(
+            result.stderr,
+            b"rofi: The following errors were detected when starting rofi:\n\n\n"
+            b"Mode nope is not found.\nThe following modes are known:\n"
+            b"        * +a\n\n",
+        )
+
+    # source/rofi.c:946-950: built-in modes such as run do not exist yet.
+    def test_show_unimplemented_builtin_diagnoses_and_exits_dataerr(self):
+        result = self.run_rofi("rofi", "-show", "run")
+
+        self.assertEqual(result.returncode, 65)
+        self.assertEqual(result.stdout, b"")
+        self.assertEqual(
+            result.stderr,
+            b"rofi: The following errors were detected when starting rofi:\n\n\n"
+            b"Mode run is not found.\nThe following modes are known:\n\n",
+        )
+
+    # source/rofi.c:869-888, source/helper.c:774-777: the matching error joins
+    # the startup error dialog before -show is read.
+    def test_show_with_invalid_matching_diagnoses_and_exits_dataerr(self):
+        result = self.run_rofi("rofi", "-modes", "a:/bin/echo", "-show", "nope", "-matching", "bogus")
+
+        self.assertEqual(result.returncode, 65)
+        self.assertEqual(result.stdout, b"")
+        self.assertEqual(
+            result.stderr,
+            b"rofi: The following errors were detected when starting rofi:\n\n\n"
+            b"The configuration failed to validate:\n"
+            b"\tconfig.matching=bogus is not a valid matching strategy.\n"
+            b"Valid options are: glob, regex, fuzzy, prefix or normal.\n"
+            b"Please update your configuration.\n",
+        )
+
+    # source/rofi.c:533-545 warns only when stdout is a terminal; then a script
+    # that cannot start shows its error instead of the view, and the return
+    # code stays 0 (source/rofi.c:201-216, source/modes/script.c:242-246).
+    def test_disabled_mode_warning_needs_a_terminal_and_failed_script_exits_zero(self):
+        spec = "b:/nonexistent/script"
+        failure = (
+            b"rofi: Failed to execute: '/nonexistent/script'\n"
+            b"Error: 'Failed to execute child process \xe2\x80\x9c/nonexistent/script\xe2\x80\x9d"
+            b" (No such file or directory)'\n"
+        )
+        result = self.run_rofi("rofi", "-show", spec)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, b"")
+        self.assertEqual(result.stderr, failure)
+
+        controller, terminal = pty.openpty()
+        try:
+            result = subprocess.run(
+                ["rofi", "-show", spec],
+                executable=ROFI,
+                stdin=subprocess.DEVNULL,
+                stdout=terminal,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+        finally:
+            os.close(terminal)
+            os.close(controller)
+        self.assertEqual(result.returncode, 0)
+        self.assertTrue(result.stderr.startswith(b"Mode \x1b[0;31m" + spec.encode() + b"\x1b[0m is not enabled."))
+        self.assertTrue(result.stderr.endswith(failure))
 
     def test_invalid_matching_diagnoses_and_exits_dataerr(self):
         result = self.run_rofi("rofi", "-dmenu", "-dump", "-matching", "bogus,fuzzy,nope")

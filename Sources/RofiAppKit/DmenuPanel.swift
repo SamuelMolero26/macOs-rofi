@@ -9,28 +9,37 @@ import os
     session: DmenuSession,
     streaming input: (open: @Sendable () -> Int32, separator: UInt8)?
 ) -> DmenuCompletion {
-    let application = NSApplication.shared
-    // Regular policy reliably registers this unbundled CLI for activation.
-    application.setActivationPolicy(.regular)
-
-    let controller = DmenuPanelController(session: session, input: input)
-    let applicationDelegate = DmenuApplicationDelegate(controller: controller)
-    application.delegate = applicationDelegate
-    withExtendedLifetime(applicationDelegate) {
-        application.run()
-    }
-    application.delegate = nil
-
-    guard let completion = controller.completion else {
+    let model = DmenuPanelModel(session: session)
+    runPanel(model: model, style: model.style, streaming: input)
+    guard let completion = model.completion else {
         preconditionFailure("dmenu panel stopped without a completion")
     }
     return completion
 }
 
-@MainActor private final class DmenuApplicationDelegate: NSObject, NSApplicationDelegate {
-    private let controller: DmenuPanelController
+/// Runs the panel until its model closes it.
+@MainActor func runPanel(
+    model: any PanelModel,
+    style: PanelStyle,
+    streaming input: (open: @Sendable () -> Int32, separator: UInt8)?
+) {
+    let application = NSApplication.shared
+    // Regular policy reliably registers this unbundled CLI for activation.
+    application.setActivationPolicy(.regular)
 
-    init(controller: DmenuPanelController) {
+    let controller = PanelController(model: model, style: style, input: input)
+    let applicationDelegate = PanelApplicationDelegate(controller: controller)
+    application.delegate = applicationDelegate
+    withExtendedLifetime(applicationDelegate) {
+        application.run()
+    }
+    application.delegate = nil
+}
+
+@MainActor private final class PanelApplicationDelegate: NSObject, NSApplicationDelegate {
+    private let controller: PanelController
+
+    init(controller: PanelController) {
         self.controller = controller
     }
 
@@ -54,7 +63,7 @@ import os
     }
 }
 
-@MainActor private final class DmenuPanelController: NSObject {
+@MainActor private final class PanelController: NSObject {
     private enum Layout {
         static let panelSize = NSSize(width: 640, height: 420)
         static let inset: CGFloat = 12
@@ -73,7 +82,8 @@ import os
         var drainScheduled = false
     }
 
-    private var session: DmenuSession
+    private let model: any PanelModel
+    private let style: PanelStyle
     private let input: (open: @Sendable () -> Int32, separator: UInt8)?
     private let pendingInput = OSAllocatedUnfairLock(initialState: PendingInput())
     private let panel: DmenuPanel
@@ -82,6 +92,19 @@ import os
     /// (bullets, no IME; upstream draws "*"). Output is the real text.
     private let searchField: NSTextField
     private let messageLabel = NSTextField(wrappingLabelWithString: "")
+    /// The message on display, nil for a hidden message bar, or `.none`
+    /// before the first update.
+    private var shownMessage: String?? = .none
+    private lazy var resultsBelowSearch = scrollView.topAnchor.constraint(
+        equalTo: searchField.bottomAnchor,
+        constant: style.fixedRows == 0 ? 0 : Layout.spacing
+    )
+    private lazy var resultsBelowMessage = scrollView.topAnchor.constraint(
+        equalTo: messageLabel.bottomAnchor,
+        constant: style.fixedRows == 0 ? 0 : Layout.spacing
+    )
+    /// The `-sidebar-mode` row, one segment per mode.
+    private let switcherControl: NSSegmentedControl?
     private let tableView = DmenuTableView()
     private let scrollView = NSScrollView()
     private let loadingLabel = NSTextField(labelWithString: "Loading.. ")
@@ -90,12 +113,16 @@ import os
         constant: -Layout.spacing
     )
     private var suppressTableSelectionChanges = false
-    private(set) var completion: DmenuCompletion?
+    private var finished = false
 
-    init(session: DmenuSession, input: (open: @Sendable () -> Int32, separator: UInt8)?) {
-        self.session = session
+    init(model: any PanelModel, style: PanelStyle, input: (open: @Sendable () -> Int32, separator: UInt8)?) {
+        self.model = model
+        self.style = style
         self.input = input
-        searchField = session.pipeline.password ? NSSecureTextField() : NSSearchField()
+        searchField = style.password ? NSSecureTextField() : NSSearchField()
+        switcherControl = style.switcherLabels.map {
+            NSSegmentedControl(labels: $0, trackingMode: .selectOne, target: nil, action: nil)
+        }
         panel = DmenuPanel(
             contentRect: NSRect(origin: .zero, size: Layout.panelSize),
             styleMask: [.borderless],
@@ -109,6 +136,7 @@ import os
         configureMessageLabel()
         configureTable()
         configureLoadingLabel()
+        configureSwitcher()
         configureLayout()
         reloadMatches()
     }
@@ -119,7 +147,7 @@ import os
             var origin = panel.frame.origin
             // Upstream's `-b` is location 6, bottom center
             // (source/modes/dmenu.c:601-603, source/xcb/view.c:275-278, 309-311, 327-330).
-            if session.pipeline.atBottom {
+            if style.atBottom {
                 origin = NSPoint(x: visibleFrame.midX - panel.frame.width / 2, y: visibleFrame.minY)
             }
             // A panel as tall as the screen must not slide under the menu bar.
@@ -153,50 +181,75 @@ import os
         panel.hasShadow = true
         panel.isOpaque = true
         panel.backgroundColor = .windowBackgroundColor
-        panel.title = session.pipeline.windowTitle
-        panel.setAccessibilityLabel(session.pipeline.windowTitle)
+        updateTitle()
+    }
+
+    /// The prompt and title follow the current mode (source/view.c:2150-2160).
+    private func updateTitle() {
+        promptLabel.stringValue = model.prompt
+        panel.title = model.windowTitle
+        panel.setAccessibilityLabel(model.windowTitle)
     }
 
     /// A long prompt truncates instead of squeezing the input.
     private func configurePromptLabel() {
-        promptLabel.stringValue = session.pipeline.prompt
         promptLabel.lineBreakMode = .byTruncatingTail
         promptLabel.maximumNumberOfLines = 1
         promptLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        promptLabel.setAccessibilityLabel("Dmenu prompt")
+        promptLabel.setAccessibilityLabel("\(style.accessibilityName) prompt")
         promptLabel.translatesAutoresizingMaskIntoConstraints = false
     }
 
     private func configureSearchField() {
         searchField.delegate = self
-        searchField.stringValue = session.query
-        searchField.setAccessibilityLabel("Dmenu search")
+        searchField.stringValue = model.query
+        searchField.setAccessibilityLabel("\(style.accessibilityName) search")
         searchField.translatesAutoresizingMaskIntoConstraints = false
     }
 
     /// Resists compression above the rows constraint, so rows shrink first, but
     /// below window-stay-put, so a message too tall for the panel is clipped.
-    /// The message is always Pango markup (source/view.c:1760-1762); invalid
-    /// markup shows raw.
     private func configureMessageLabel() {
-        let message = session.pipeline.message ?? ""
-        if let font = messageLabel.font, let markup = parsePangoMarkup(message) {
-            messageLabel.attributedStringValue = markup.attributedString(
-                font: font,
-                color: .labelColor,
-                lineBreakMode: .byWordWrapping
-            )
-        } else {
-            messageLabel.stringValue = message
-        }
         messageLabel.isSelectable = false
         messageLabel.preferredMaxLayoutWidth = Layout.panelSize.width - 2 * Layout.inset
         messageLabel.setContentCompressionResistancePriority(
             NSLayoutConstraint.Priority(rawValue: 495),
             for: .vertical
         )
-        messageLabel.setAccessibilityLabel("Dmenu message")
+        messageLabel.setAccessibilityLabel("\(style.accessibilityName) message")
         messageLabel.translatesAutoresizingMaskIntoConstraints = false
+    }
+
+    /// The message bar shows only with a message, which a mode may change
+    /// after every result (source/view.c:230-240, 808). The message is always
+    /// Pango markup (source/view.c:1760-1762); invalid markup shows raw.
+    private func updateMessage() {
+        let message = model.message
+        guard message != shownMessage else { return }
+        shownMessage = message
+        if let message {
+            if messageLabel.superview == nil, let contentView = panel.contentView {
+                contentView.addSubview(messageLabel)
+                NSLayoutConstraint.activate([
+                    messageLabel.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: Layout.spacing),
+                    messageLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: Layout.inset),
+                    messageLabel.trailingAnchor.constraint(
+                        equalTo: contentView.trailingAnchor, constant: -Layout.inset),
+                ])
+            }
+            if let font = messageLabel.font, let markup = parsePangoMarkup(message) {
+                messageLabel.attributedStringValue = markup.attributedString(
+                    font: font,
+                    color: .labelColor,
+                    lineBreakMode: .byWordWrapping
+                )
+            } else {
+                messageLabel.stringValue = message
+            }
+        }
+        messageLabel.isHidden = message == nil
+        resultsBelowSearch.isActive = message == nil
+        resultsBelowMessage.isActive = message != nil
     }
 
     private func configureTable() {
@@ -210,7 +263,7 @@ import os
         tableView.allowsMultipleSelection = false
         // Like upstream, a visible row stays selected, so Return is predictable.
         tableView.allowsEmptySelection = false
-        tableView.setAccessibilityLabel("Dmenu results")
+        tableView.setAccessibilityLabel("\(style.accessibilityName) results")
         tableView.dataSource = self
         tableView.delegate = self
 
@@ -225,29 +278,46 @@ import os
     private func configureLoadingLabel() {
         loadingLabel.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
         loadingLabel.textColor = .secondaryLabelColor
-        loadingLabel.setAccessibilityLabel("Dmenu loading")
+        loadingLabel.setAccessibilityLabel("\(style.accessibilityName) loading")
         loadingLabel.isHidden = input == nil
         loadingLabel.translatesAutoresizingMaskIntoConstraints = false
     }
 
+    /// Upstream's mode-switcher sits below the list with one equal-width
+    /// button per mode (source/view.c:1668, 1795-1806). It never takes focus,
+    /// so typing stays in the entry.
+    private func configureSwitcher() {
+        guard let switcherControl else { return }
+        switcherControl.selectedSegment = model.currentMode ?? -1
+        switcherControl.segmentDistribution = .fillEqually
+        switcherControl.refusesFirstResponder = true
+        switcherControl.target = self
+        switcherControl.action = #selector(switcherClicked(_:))
+        switcherControl.setAccessibilityLabel("\(style.accessibilityName) modes")
+        switcherControl.translatesAutoresizingMaskIntoConstraints = false
+    }
+
     private func configureLayout() {
         guard let contentView = panel.contentView else { return }
-        let rows = session.pipeline.fixedRows
+        let rows = style.fixedRows
         let rowHeight = tableView.rowHeight + tableView.intercellSpacing.height
         contentView.addSubview(promptLabel)
         contentView.addSubview(searchField)
         panel.initialFirstResponder = searchField
         contentView.addSubview(scrollView)
         contentView.addSubview(loadingLabel)
-        var resultsTop = searchField.bottomAnchor
-        if session.pipeline.message != nil {
-            contentView.addSubview(messageLabel)
+        updateMessage()
+        var resultsBottom = scrollView.bottomAnchor.constraint(
+            equalTo: contentView.bottomAnchor, constant: -Layout.inset)
+        if let switcherControl {
+            contentView.addSubview(switcherControl)
             NSLayoutConstraint.activate([
-                messageLabel.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: Layout.spacing),
-                messageLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: Layout.inset),
-                messageLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -Layout.inset),
+                switcherControl.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: Layout.inset),
+                switcherControl.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -Layout.inset),
+                switcherControl.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -Layout.inset),
             ])
-            resultsTop = messageLabel.bottomAnchor
+            resultsBottom = scrollView.bottomAnchor.constraint(
+                equalTo: switcherControl.topAnchor, constant: -Layout.spacing)
         }
         // Full width unless the loading label needs the room, so the label
         // never covers the field's cancel button. Below the label's compression
@@ -267,10 +337,9 @@ import os
             searchField.leadingAnchor.constraint(equalTo: promptLabel.trailingAnchor, constant: Layout.spacing),
             searchFieldFullWidth,
             searchField.widthAnchor.constraint(greaterThanOrEqualTo: contentView.widthAnchor, multiplier: 0.5),
-            scrollView.topAnchor.constraint(equalTo: resultsTop, constant: rows == 0 ? 0 : Layout.spacing),
             scrollView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: Layout.inset),
             scrollView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -Layout.inset),
-            scrollView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -Layout.inset),
+            resultsBottom,
             scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: rows == 0 ? 0 : rowHeight),
         ])
         if let rows {
@@ -316,10 +385,10 @@ import os
             return pending
         }
         let firstNewRow = tableView.numberOfRows
-        let selection = session.selectedVisibleIndex
-        session.appendRows(pending.rows)
-        tableView.insertRows(at: IndexSet(firstNewRow..<session.matches.count), withAnimation: [])
-        if session.selectedVisibleIndex != selection {
+        let selection = model.selectedVisibleIndex
+        model.appendRows(pending.rows)
+        tableView.insertRows(at: IndexSet(firstNewRow..<model.matches.count), withAnimation: [])
+        if model.selectedVisibleIndex != selection {
             syncSelection()
         }
         // The end of input clears the one overlay, even a multi-select count
@@ -356,7 +425,7 @@ import os
     }
 
     private func restoreCoreSelection() {
-        guard let index = session.selectedVisibleIndex,
+        guard let index = model.selectedVisibleIndex,
             tableView.numberOfRows > index
         else {
             tableView.deselectAll(nil)
@@ -366,42 +435,57 @@ import os
         tableView.scrollRowToVisible(index)
     }
 
-    private func finish(_ completion: DmenuCompletion?) {
-        guard self.completion == nil, let completion else { return }
-        self.completion = completion
-        panel.orderOut(nil)
-        NSApplication.shared.stop(nil)
-    }
-}
-
-extension DmenuPanelController {
-    /// A `-multi-select` toggle keeps the panel open, so the ballots, the
-    /// moved selection and the count overlay are redrawn.
-    fileprivate func acceptAlternate() {
-        let overlayBefore = session.selectionOverlay
-        if let completion = session.acceptAlternate() {
-            finish(completion)
+    /// Runs one model action and redraws what it changed.
+    private func perform(_ action: (any PanelModel) -> PanelUpdate) {
+        guard !finished else { return }
+        let overlayBefore = model.selectionOverlay
+        switch action(model) {
+        case .none:
             return
+        case .close:
+            finished = true
+            panel.orderOut(nil)
+            NSApplication.shared.stop(nil)
+        case .reload:
+            reloadMatches()
+            // A refused toggle leaves the count unchanged and must not clear
+            // "Loading.. " mid-stream; upstream returns before touching the
+            // overlay (source/modes/dmenu.c:908-911).
+            if model.selectionOverlay != overlayBefore { setOverlay(model.selectionOverlay) }
+            refreshChrome()
         }
-        guard session.pipeline.multiSelect else { return }
-        reloadMatches()
-        // A refused toggle leaves the count unchanged and must not clear
-        // "Loading.. " mid-stream; upstream returns before touching the
-        // overlay (source/modes/dmenu.c:908-911).
-        if session.selectionOverlay != overlayBefore { setOverlay(session.selectionOverlay) }
+    }
+
+    /// After a mode's result or a switch: prompt, title, message, the
+    /// highlighted switcher button, and the query a mode rewrote, with the
+    /// cursor at the end (source/rofi.c:243-251, source/view.c:2150-2177).
+    private func refreshChrome() {
+        updateTitle()
+        updateMessage()
+        if let currentMode = model.currentMode {
+            switcherControl?.selectedSegment = currentMode
+        }
+        if searchField.stringValue != model.query {
+            searchField.stringValue = model.query
+            searchField.currentEditor()?.selectedRange = NSRange(location: (model.query as NSString).length, length: 0)
+        }
+    }
+
+    @objc private func switcherClicked(_ sender: NSSegmentedControl) {
+        let index = sender.selectedSegment
+        perform { $0.switchTo(index) }
     }
 }
 
-extension DmenuPanelController: NSTextFieldDelegate {
+extension PanelController: NSTextFieldDelegate {
     func controlTextDidChange(_ notification: Notification) {
         if let editor = searchField.currentEditor() as? NSTextView,
             editor.hasMarkedText()
         {
             return
         }
-        let completion = session.updateQuery(searchField.stringValue)
-        reloadMatches()
-        finish(completion)
+        let query = searchField.stringValue
+        perform { $0.updateQuery(query) }
     }
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
@@ -413,18 +497,28 @@ extension DmenuPanelController: NSTextFieldDelegate {
             // (source/keyb.c:127-130).
             let modifiers = NSApp.currentEvent?.modifierFlags.intersection([.shift, .control, .option, .command])
             if modifiers == .shift {
-                acceptAlternate()
+                perform { $0.acceptAlternate() }
             } else {
-                finish(session.accept())
+                perform { $0.accept() }
             }
         case #selector(NSResponder.cancelOperation(_:)):
-            finish(session.cancel())
+            perform { $0.cancel() }
         case #selector(NSResponder.moveUp(_:)):
-            session.moveSelection(by: -1)
+            model.moveSelection(by: -1)
             syncSelection()
         case #selector(NSResponder.moveDown(_:)):
-            session.moveSelection(by: 1)
+            model.moveSelection(by: 1)
             syncSelection()
+        // kb-mode-next is Control+Tab and kb-mode-previous Control+Shift+Tab
+        // (source/keyb.c:135-142; Shift+Right/Left stay text selection). The
+        // field editor gets them as these key-view selectors: observed with
+        // System Events key code 48 on macOS 15, while plain Tab and Shift+Tab
+        // arrive as insertTab: and insertBacktab:. dmenu has no modes and
+        // leaves them to AppKit.
+        case #selector(NSWindow.selectNextKeyView(_:)), #selector(NSWindow.selectPreviousKeyView(_:)):
+            let offset = commandSelector == #selector(NSWindow.selectNextKeyView(_:)) ? 1 : -1
+            guard model.currentMode != nil else { return false }
+            perform { $0.switchMode(by: offset) }
         default:
             return false
         }
@@ -432,9 +526,9 @@ extension DmenuPanelController: NSTextFieldDelegate {
     }
 }
 
-extension DmenuPanelController: NSTableViewDataSource, NSTableViewDelegate {
+extension PanelController: NSTableViewDataSource, NSTableViewDelegate {
     func numberOfRows(in tableView: NSTableView) -> Int {
-        session.matches.count
+        model.matches.count
     }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
@@ -444,16 +538,16 @@ extension DmenuPanelController: NSTableViewDataSource, NSTableViewDelegate {
         } else {
             cell = makeCell()
         }
-        let match = session.matches[row]
-        let text = session.displayText(for: match)
+        let match = model.matches[row]
+        let text = model.displayText(for: match)
         // Under -markup-rows the ballot is part of the markup, as upstream
         // marks up the whole formatted row (source/modes/dmenu.c:459-460).
         // Invalid markup shows raw.
         cell.textField?.stringValue = text
-        cell.markup = session.pipeline.markupRows ? parsePangoMarkup(text) : nil
+        cell.markup = style.markupRows ? parsePangoMarkup(text) : nil
         // Active wins over urgent; the -multi-select `.selected` flag is not
         // styled (include/widgets/textbox.h:122, source/widgets/textbox.c:312-315).
-        let state = session.state(of: match)
+        let state = model.state(of: match)
         cell.stateColor = state.contains(.active) ? .systemBlue : state.contains(.urgent) ? .systemRed : .labelColor
         return cell
     }
@@ -461,7 +555,7 @@ extension DmenuPanelController: NSTableViewDataSource, NSTableViewDelegate {
     func tableViewSelectionDidChange(_ notification: Notification) {
         guard !suppressTableSelectionChanges else { return }
         let selectedRow = tableView.selectedRow
-        session.selectVisibleIndex(selectedRow >= 0 ? selectedRow : nil)
+        model.selectVisibleIndex(selectedRow >= 0 ? selectedRow : nil)
     }
 
     private func makeCell() -> DmenuCell {
@@ -469,7 +563,7 @@ extension DmenuPanelController: NSTableViewDataSource, NSTableViewDelegate {
         cell.identifier = Identifier.cell
 
         let label = NSTextField(labelWithString: "")
-        switch session.pipeline.ellipsizeMode {
+        switch style.ellipsizeMode {
         case .start: label.lineBreakMode = .byTruncatingHead
         case .middle: label.lineBreakMode = .byTruncatingMiddle
         case .end: label.lineBreakMode = .byTruncatingTail
@@ -486,9 +580,9 @@ extension DmenuPanelController: NSTableViewDataSource, NSTableViewDelegate {
     }
 }
 
-extension DmenuPanelController: NSWindowDelegate {
+extension PanelController: NSWindowDelegate {
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        finish(session.cancel())
+        perform { $0.cancel() }
         return false
     }
 }
