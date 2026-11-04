@@ -31,7 +31,8 @@ extension MarkupText {
                 string.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: range)
             }
             if let script = style.script {
-                string.addAttribute(.baselineOffset, value: (script == .sup ? 1 : -1) * font.pointSize / 3, range: range)
+                string.addAttribute(
+                    .baselineOffset, value: (script == .sup ? 1 : -1) * font.pointSize / 3, range: range)
             }
             if let foreground = style.foreground, !overridingColors {
                 string.addAttribute(.foregroundColor, value: NSColor(foreground), range: range)
@@ -44,12 +45,13 @@ extension MarkupText {
     }
 }
 
-private extension MarkupAttributes {
+extension MarkupAttributes {
     /// `base`, or the system monospaced font or `fontFamily` when set, at the
     /// markup's size with its bold and italic traits.
-    func font(base: NSFont) -> NSFont {
+    fileprivate func font(base: NSFont) -> NSFont {
         let size = CGFloat((pointSize ?? Double(base.pointSize)) * scale)
-        let font = monospace
+        let font =
+            monospace
             ? .monospacedSystemFont(ofSize: size, weight: .regular)
             : fontFamily.flatMap { NSFontManager.shared.font(withFamily: $0, traits: [], weight: 5, size: size) }
                 ?? NSFont(descriptor: base.fontDescriptor, size: size) ?? base
@@ -60,8 +62,8 @@ private extension MarkupAttributes {
     }
 }
 
-private extension NSColor {
-    convenience init(_ color: MarkupColor) {
+extension NSColor {
+    fileprivate convenience init(_ color: MarkupColor) {
         self.init(
             srgbRed: CGFloat(color.red) / 255,
             green: CGFloat(color.green) / 255,

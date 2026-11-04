@@ -6,7 +6,7 @@ let package = Package(
     platforms: [.macOS(.v13)],
     products: [
         // Named `rofi` so existing scripts that call `rofi -dmenu` work unchanged.
-        .executable(name: "rofi", targets: ["rofi"]),
+        .executable(name: "rofi", targets: ["rofi"])
     ],
     targets: [
         .target(name: "RofiCore"),

@@ -114,8 +114,10 @@ public struct DmenuPipeline: Sendable {
         onlyMatch = args.has("-only-match")
         noCustom = args.has("-no-custom")
         // These only work in sync mode (source/modes/dmenu.c:536-542).
-        isAsync = !autoSelect && !["-sync", "-dump", "-select", "-no-custom", "-only-match", "-selected-row"]
-            .contains(where: args.has)
+        isAsync =
+            !autoSelect
+            && !["-sync", "-dump", "-select", "-no-custom", "-only-match", "-selected-row"]
+                .contains(where: args.has)
         // `-p` is read last, so it wins (source/modes/dmenu.c:591-595, 1035).
         prompt = args.string("-p") ?? args.string("-window-title") ?? prompt
         message = args.string("-mesg")
@@ -277,8 +279,9 @@ private func parseMatching(_ value: String) throws -> MatchingMethod? {
     var errors: [String] = []
     for name in names where recognizedCount < 5 {
         guard let method = MatchingMethod(rawValue: name.lowercased()) else {
-            errors.append("\tconfig.matching=\(name) is not a valid matching strategy.\n"
-                + "Valid options are: glob, regex, fuzzy, prefix or normal.\n")
+            errors.append(
+                "\tconfig.matching=\(name) is not a valid matching strategy.\n"
+                    + "Valid options are: glob, regex, fuzzy, prefix or normal.\n")
             continue
         }
         firstMethod = firstMethod ?? method
@@ -298,7 +301,8 @@ private func parseMatching(_ value: String) throws -> MatchingMethod? {
 // group gives "" even after the last matched one, which GLib omits.
 private func splitColumns(_ string: String, separator: String) -> [String] {
     guard !string.isEmpty,
-          let regex = try? NSRegularExpression(pattern: separator, options: .caseInsensitive) else { return [] }
+        let regex = try? NSRegularExpression(pattern: separator, options: .caseInsensitive)
+    else { return [] }
     let text = string as NSString
     var pieces: [String] = []
     var pieceStart = 0

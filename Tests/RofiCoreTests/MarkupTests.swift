@@ -1,5 +1,5 @@
-import Testing
 import RofiCore
+import Testing
 
 // Contract: the Pango markup subset rofi rows and messages use
 // (pango_parse_markup, as called from source/helper.c:1700-1709 and
@@ -71,16 +71,21 @@ import RofiCore
     }
 
     @Test func spanColors() throws {
-        #expect(try attributes("<span foreground=\"#ff0000\">x</span>").foreground
-            == MarkupColor(red: 255, green: 0, blue: 0))
-        #expect(try attributes("<span fgcolor=\"#0f0\">x</span>").foreground
-            == MarkupColor(red: 0, green: 255, blue: 0))
-        #expect(try attributes("<span color=\"#0000FF80\">x</span>").foreground
-            == MarkupColor(red: 0, green: 0, blue: 255, alpha: 128))
-        #expect(try attributes("<span background=\"#123456\">x</span>").background
-            == MarkupColor(red: 0x12, green: 0x34, blue: 0x56))
-        #expect(try attributes("<span bgcolor=\"#abcd\">x</span>").background
-            == MarkupColor(red: 0xAA, green: 0xBB, blue: 0xCC, alpha: 0xDD))
+        #expect(
+            try attributes("<span foreground=\"#ff0000\">x</span>").foreground
+                == MarkupColor(red: 255, green: 0, blue: 0))
+        #expect(
+            try attributes("<span fgcolor=\"#0f0\">x</span>").foreground
+                == MarkupColor(red: 0, green: 255, blue: 0))
+        #expect(
+            try attributes("<span color=\"#0000FF80\">x</span>").foreground
+                == MarkupColor(red: 0, green: 0, blue: 255, alpha: 128))
+        #expect(
+            try attributes("<span background=\"#123456\">x</span>").background
+                == MarkupColor(red: 0x12, green: 0x34, blue: 0x56))
+        #expect(
+            try attributes("<span bgcolor=\"#abcd\">x</span>").background
+                == MarkupColor(red: 0xAA, green: 0xBB, blue: 0xCC, alpha: 0xDD))
     }
 
     @Test func spanTextAttributes() throws {

@@ -1,5 +1,5 @@
-import Testing
 import RofiCore
+import Testing
 
 // Contract: helper_parse_char, rofi source/helper.c:383-429.
 @Suite struct SeparatorTests {
