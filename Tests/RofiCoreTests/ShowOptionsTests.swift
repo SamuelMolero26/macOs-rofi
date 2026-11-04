@@ -37,9 +37,10 @@ import Testing
     // keeps duplicates.
     @Test func listSplitsOnCommaOrHashKeepingDuplicates_rofi_c_812() throws {
         let options = try parse(["-modes", ",a:x#b:y,,a:z,"])
-        #expect(options.modes == [
-            .script(name: "a", path: "x"), .script(name: "b", path: "y"), .script(name: "a", path: "z"),
-        ])
+        #expect(
+            options.modes == [
+                .script(name: "a", path: "x"), .script(name: "b", path: "y"), .script(name: "a", path: "z"),
+            ])
     }
 
     // source/rofi.c:800-807, 648-655: a token naming an already known mode
@@ -77,19 +78,21 @@ import Testing
     // source/rofi.c:546-562, 832-835: a name with no built-in or script spec
     // is an error, listing the modes known so far.
     @Test func unknownOrBuiltinNameIsNotFound_rofi_c_546() {
-        #expect(errors(["-modes", "a:x,run"]) == [
-            "Mode run is not found.\nThe following modes are known:\n        * +a\n",
-        ])
+        #expect(
+            errors(["-modes", "a:x,run"]) == [
+                "Mode run is not found.\nThe following modes are known:\n        * +a\n"
+            ])
     }
 
     // source/rofi.c:832-835, 885-888: every bad token is collected, and setup
     // errors win over `-show`.
     @Test func everyBadTokenIsCollected_rofi_c_885() throws {
         let errors = errors(["-modes", "run,drun", "-show", "a:x"])
-        #expect(errors == [
-            "Mode run is not found.\nThe following modes are known:\n",
-            "Mode drun is not found.\nThe following modes are known:\n",
-        ])
+        #expect(
+            errors == [
+                "Mode run is not found.\nThe following modes are known:\n",
+                "Mode drun is not found.\nThe following modes are known:\n",
+            ])
     }
 
     // source/rofi.c:1243-1250, 869-888: config_sanity_check adds its error
@@ -97,10 +100,11 @@ import Testing
     @Test func matchingErrorFollowsSetupErrorsBeforeShow_rofi_c_885() throws {
         let matching = try #require(errors(["-matching", "bogus"]).first)
         #expect(matching.hasPrefix("The configuration failed to validate:\n\tconfig.matching=bogus"))
-        #expect(errors(["-modes", "run", "-matching", "bogus", "-show", "nope"]) == [
-            "Mode run is not found.\nThe following modes are known:\n",
-            matching,
-        ])
+        #expect(
+            errors(["-modes", "run", "-matching", "bogus", "-show", "nope"]) == [
+                "Mode run is not found.\nThe following modes are known:\n",
+                matching,
+            ])
         #expect(errors(["-modes", "a:x", "-matching", "bogus", "-show", "nope"]) == [matching])
         #expect(try parse(["-matching", "fuzzy"]).match.method == .fuzzy)
     }
@@ -109,23 +113,24 @@ import Testing
     // enabled modes. Its markup is rendered away; only script modes exist,
     // and all of them are enabled, so none can be enabled.
     @Test func unsureWhatToShowListsTheEnabledModes_rofi_c_564() throws {
-        #expect(try parse(["-modes", "a:x,b:y,a:z"]).unsureWhatToShow == """
-            Rofi is unsure what to show.
+        #expect(
+            try parse(["-modes", "a:x,b:y,a:z"]).unsureWhatToShow == """
+                Rofi is unsure what to show.
 
-            Please specify the mode you want to show.
+                Please specify the mode you want to show.
 
-                rofi -show {mode}
+                    rofi -show {mode}
 
-            The following modes are enabled:
-                • a
-                • b
-                • a
+                The following modes are enabled:
+                    • a
+                    • b
+                    • a
 
-            The following modes can be enabled:
+                The following modes can be enabled:
 
-            To activate a mode, add it to the list in the modes setting.
+                To activate a mode, add it to the list in the modes setting.
 
-            """)
+                """)
     }
 
     // source/rofi.c:840-857: the dialog shows two errors, and its count of the
@@ -160,11 +165,12 @@ import Testing
         let options = try parse(["-modes", "a:x", "-show", "c:./s"])
         #expect(options.modes == [.script(name: "a", path: "x"), .script(name: "c", path: "./s")])
         #expect(options.startIndex == 1)
-        #expect(options.warnings == [
-            "Mode \u{1B}[0;31mc:./s\u{1B}[0m is not enabled. I have enabled it for now.\n"
-                + "Please consider adding \u{1B}[0;31mc:./s\u{1B}[0m to the list of enabled modes: "
-                + "\u{1B}[0;32mmodes: [a:x\u{1B}[0m\u{1B}[0;31m,c:./s]\u{1B}[0m.\n",
-        ])
+        #expect(
+            options.warnings == [
+                "Mode \u{1B}[0;31mc:./s\u{1B}[0m is not enabled. I have enabled it for now.\n"
+                    + "Please consider adding \u{1B}[0;31mc:./s\u{1B}[0m to the list of enabled modes: "
+                    + "\u{1B}[0;32mmodes: [a:x\u{1B}[0m\u{1B}[0;31m,c:./s]\u{1B}[0m.\n"
+            ])
     }
 
     // source/rofi.c:161-168: lookup is by mode name, so a full spec that is
@@ -178,9 +184,10 @@ import Testing
 
     // source/rofi.c:946-950: an unknown `-show` name is an error.
     @Test func showUnknownNameIsAnError_rofi_c_946() {
-        #expect(errors(["-modes", "a:x", "-show", "run"]) == [
-            "Mode run is not found.\nThe following modes are known:\n        * +a\n",
-        ])
+        #expect(
+            errors(["-modes", "a:x", "-show", "run"]) == [
+                "Mode run is not found.\nThe following modes are known:\n        * +a\n"
+            ])
     }
 
     // source/helper.c:325-342: find_arg_str takes the next argument even when
@@ -225,6 +232,7 @@ import Testing
         #expect(options.method == .fuzzy)
         #expect(!options.tokenize)
         #expect(try DmenuPipeline(arguments: Arguments(["rofi", "-dmenu"])).match.caseSensitive)
-        #expect(try !DmenuPipeline(arguments: Arguments(["rofi", "-dmenu", "-case-sensitive", "-i"])).match.caseSensitive)
+        #expect(
+            try !DmenuPipeline(arguments: Arguments(["rofi", "-dmenu", "-case-sensitive", "-i"])).match.caseSensitive)
     }
 }

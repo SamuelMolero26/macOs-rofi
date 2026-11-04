@@ -142,7 +142,9 @@ extension ShowOptions {
 /// `help_print_disabled_mode`, colors included (source/rofi.c:533-545,
 /// include/rofi.h:123-131).
 private func disabledModeWarning(_ mode: String, list: String) -> String {
-    let red = "\u{1B}[0;31m", green = "\u{1B}[0;32m", reset = "\u{1B}[0m"
+    let red = "\u{1B}[0;31m"
+    let green = "\u{1B}[0;32m"
+    let reset = "\u{1B}[0m"
     return "Mode \(red)\(mode)\(reset) is not enabled. I have enabled it for now.\n"
         + "Please consider adding \(red)\(mode)\(reset) to the list of enabled modes: "
         + "\(green)modes: [\(list)\(reset)\(red),\(mode)]\(reset).\n"

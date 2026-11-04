@@ -182,13 +182,19 @@ private func shellParseArgv(_ text: String) throws(SpawnError) -> [String] {
             while let next = chars.first, next != "\n" { chars.removeFirst() }
         case "\\":
             // A backslash-newline is a line continuation.
-            guard let next = chars.popFirst() else { word = (word ?? "") + "\\"; break }
+            guard let next = chars.popFirst() else {
+                word = (word ?? "") + "\\"
+                break
+            }
             if next != "\n" { word = (word ?? "") + String(next) }
         case "'", "\"":
             var quoted = ""
             var closed = false
             while let next = chars.popFirst() {
-                if next == char { closed = true; break }
+                if next == char {
+                    closed = true
+                    break
+                }
                 // In double quotes a backslash escapes only $ ` " \ and newline.
                 if char == "\"", next == "\\", let escaped = chars.first, "$`\"\\\n".contains(escaped) {
                     chars.removeFirst()
@@ -198,7 +204,8 @@ private func shellParseArgv(_ text: String) throws(SpawnError) -> [String] {
                 }
             }
             guard closed else {
-                throw SpawnError(message: "Text ended before matching quote was found for \(char). (The text was “\(text)”)")
+                throw SpawnError(
+                    message: "Text ended before matching quote was found for \(char). (The text was “\(text)”)")
             }
             word = (word ?? "") + quoted
         default:
@@ -230,7 +237,9 @@ private func spawnAndRead(_ argv: [String], environment: [String: String]) throw
 
     let cArgv = argv.map { strdup($0) } + [nil]
     let cEnvironment = environment.map { strdup("\($0.key)=\($0.value)") } + [nil]
-    defer { (cArgv + cEnvironment).forEach { free($0) } }
+    defer {
+        for pointer in cArgv + cEnvironment { free(pointer) }
+    }
 
     var pid: pid_t = 0
     let status = posix_spawnp(&pid, argv[0], &actions, &attributes, cArgv, cEnvironment)

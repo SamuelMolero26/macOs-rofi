@@ -233,7 +233,8 @@ import os
                 NSLayoutConstraint.activate([
                     messageLabel.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: Layout.spacing),
                     messageLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: Layout.inset),
-                    messageLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -Layout.inset),
+                    messageLabel.trailingAnchor.constraint(
+                        equalTo: contentView.trailingAnchor, constant: -Layout.inset),
                 ])
             }
             if let font = messageLabel.font, let markup = parsePangoMarkup(message) {
@@ -306,7 +307,8 @@ import os
         contentView.addSubview(scrollView)
         contentView.addSubview(loadingLabel)
         updateMessage()
-        var resultsBottom = scrollView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -Layout.inset)
+        var resultsBottom = scrollView.bottomAnchor.constraint(
+            equalTo: contentView.bottomAnchor, constant: -Layout.inset)
         if let switcherControl {
             contentView.addSubview(switcherControl)
             NSLayoutConstraint.activate([
@@ -314,7 +316,8 @@ import os
                 switcherControl.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -Layout.inset),
                 switcherControl.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -Layout.inset),
             ])
-            resultsBottom = scrollView.bottomAnchor.constraint(equalTo: switcherControl.topAnchor, constant: -Layout.spacing)
+            resultsBottom = scrollView.bottomAnchor.constraint(
+                equalTo: switcherControl.topAnchor, constant: -Layout.spacing)
         }
         // Full width unless the loading label needs the room, so the label
         // never covers the field's cancel button. Below the label's compression

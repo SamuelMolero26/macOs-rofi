@@ -15,7 +15,7 @@ private final class Fixtures {
     }
 
     deinit {
-        files.forEach { unlink($0) }
+        for file in files { unlink(file) }
         rmdir(directory)
     }
 
@@ -66,7 +66,8 @@ private let reportRun = """
     // script.c:215-232, 337: the first run gets no argument, ROFI_RETV=0,
     // ROFI_OUTSIDE=rofi's pid and no ROFI_INPUT.
     @Test func initialRunHasNoArgument_script_c_337() {
-        let path = fixtures.script("s", #"echo "retv=$ROFI_RETV argc=$# input=${ROFI_INPUT-unset} outside=$ROFI_OUTSIDE""#)
+        let path = fixtures.script(
+            "s", #"echo "retv=$ROFI_RETV argc=$# input=${ROFI_INPUT-unset} outside=$ROFI_OUTSIDE""#)
         let mode = ScriptMode(name: "s", command: path)
         #expect(mode.name == "s")
         #expect(texts(mode) == ["retv=0 argc=0 input=unset outside=\(getpid())"])
@@ -128,7 +129,9 @@ private let reportRun = """
     // script.c:171-172, 258: delim takes effect for the next record and
     // persists into later runs.
     @Test func delimHeaderSplitsLaterRecords_script_c_171() {
-        let path = fixtures.script("s", """
+        let path = fixtures.script(
+            "s",
+            """
             if [ "$ROFI_RETV" = 0 ]; then printf '\\000delim\\037|\\na|b\\nc|'; else printf 'x|y|'; fi
             """)
         let mode = ScriptMode(name: "s", command: path)
@@ -139,7 +142,8 @@ private let reportRun = """
 
     // Headers that are parsed but not implemented never become rows.
     @Test func otherHeadersAreNotRows() {
-        let path = fixtures.script("s", #"printf '\000markup-rows\037true\n\000urgent\0370\n\000keep-filter\037true\nrow\n'"#)
+        let path = fixtures.script(
+            "s", #"printf '\000markup-rows\037true\n\000urgent\0370\n\000keep-filter\037true\nrow\n'"#)
         #expect(texts(ScriptMode(name: "s", command: path)) == ["row"])
     }
 
@@ -220,7 +224,8 @@ private let reportRun = """
         #expect(perform(plain, .customKey(2), row: 0).result == .switchTo(2))
         #expect(texts(plain) == ["row"])
 
-        let hot = ScriptMode(name: "h", command: fixtures.script("h", reportRun + #"\#nprintf '\000use-hot-keys\037true\nrow\n'"#))
+        let hot = ScriptMode(
+            name: "h", command: fixtures.script("h", reportRun + #"\#nprintf '\000use-hot-keys\037true\nrow\n'"#))
         #expect(perform(hot, .customKey(2), row: 0).result == .reload)
         #expect(texts(hot).prefix(3) == ["retv=12", "argc=1", "arg=row"])
     }
@@ -252,17 +257,19 @@ private let reportRun = """
         let path = fixtures.directory + "/missing"
         let mode = ScriptMode(name: "m", command: path)
         #expect(mode.rows.isEmpty)
-        #expect(mode.error == """
-            Failed to execute: '\(path)'
-            Error: 'Failed to execute child process “\(path)” (No such file or directory)'
-            """)
+        #expect(
+            mode.error == """
+                Failed to execute: '\(path)'
+                Error: 'Failed to execute child process “\(path)” (No such file or directory)'
+                """)
 
         let quoted = ScriptMode(name: "q", command: "'open")
         #expect(quoted.rows.isEmpty)
-        #expect(quoted.error == """
-            Failed to execute: ''open'
-            Error: 'Text ended before matching quote was found for '. (The text was “'open”)'
-            """)
+        #expect(
+            quoted.error == """
+                Failed to execute: ''open'
+                Error: 'Text ended before matching quote was found for '. (The text was “'open”)'
+                """)
     }
 
     // script.c:521-541: permanent rows always match; a token the text misses
@@ -300,7 +307,8 @@ private let reportRun = """
         #expect(open)
         #expect(s.query == "")
         #expect(s.selectedVisibleIndex == 0)
-        #expect(s.matches.map(\.row.text) == ["retv=1", "argc=1", "arg=beetle", "info=unset", "data=unset", "input=bee"])
+        #expect(
+            s.matches.map(\.row.text) == ["retv=1", "argc=1", "arg=beetle", "info=unset", "data=unset", "input=bee"])
 
         s.previous()
         #expect(s.prompt == "Fruit")
