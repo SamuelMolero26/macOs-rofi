@@ -9,7 +9,8 @@ public enum MatchingMethod: String, Sendable {
 public struct MatchOptions: Sendable {
     public var method: MatchingMethod = .normal
     public var tokenize = true
-    public var negateChar: Character = "-"
+    /// `matching_negate_char`: a raw byte, like rofi's `char`.
+    public var negateByte = UInt8(ascii: "-")
     public var normalize = false
     public var caseSensitive = false
     public var caseSmart = false
@@ -53,8 +54,13 @@ public func isCaseSensitive(query: String, options: MatchOptions) -> Bool {
 private func compile(_ token: String, _ options: MatchOptions, _ caseSensitive: Bool)
     -> (regex: NSRegularExpression, invert: Bool)
 {
-    let invert = token.first == options.negateChar
-    let text = invert ? String(token.dropFirst()) : token
+    let bytes = token.utf8
+    let invert = bytes.first == options.negateByte
+    // rofi advances one byte (create_regex, source/helper.c:249-252). A stray
+    // continuation byte left behind decodes to U+FFFD here; GRegex rejects that
+    // pattern and the token never matches, so the two agree unless the text
+    // itself holds U+FFFD.
+    let text = invert ? String(decoding: bytes.dropFirst(), as: UTF8.self) : token
     let pattern = switch options.method {
     case .normal: escapeRegex(text)
     case .regex: text
