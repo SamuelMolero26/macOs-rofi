@@ -147,15 +147,43 @@ public final class ScriptMode: Mode {
     }
 }
 
-/// One mode per entry of the mode list (source/rofi.c:790-826).
-/// ponytail: upstream reuses the instance when a name is listed again bare.
+/// Creates mode lists that do not contain `drun`. Application-mode assembly
+/// must use the records-and-launcher overload so RofiCore stays platform-free.
 public func makeModes(_ specs: [ModeSpec]) -> [any Mode] {
+    precondition(
+        !specs.contains { if case .drun = $0 { true } else { false } },
+        "drun mode requires injected application records and launcher")
+    return makeModes(
+        specs, applications: { [] },
+        launcher: { _ in
+            .failure(
+                ApplicationLaunchFailure(
+                    command: "launch application", reason: "application launcher is unavailable"))
+        })
+}
+
+/// One mode per entry of the mode list (source/rofi.c:790-826).
+///
+/// Application discovery completes synchronously before any mode is returned,
+/// and is skipped when the list does not contain `drun`. Multiple `drun`
+/// entries share the same discovered records. ponytail: upstream reuses the
+/// instance when a name is listed again bare.
+public func makeModes(
+    _ specs: [ModeSpec], applications: () -> [ApplicationRecord],
+    launcher: @escaping ApplicationLauncher
+) -> [any Mode] {
     let home = ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory()
+    let applicationRecords =
+        specs.contains { if case .drun = $0 { true } else { false } }
+        ? applications() : []
     return specs.map { spec in
         switch spec {
         case .script(let name, let path): ScriptMode(name: name, command: path)
         case .drun(let historyPath):
-            DrunMode(home: home, history: historyPath.map { History(url: URL(fileURLWithPath: $0)) })
+            DrunMode(
+                applications: applicationRecords,
+                history: historyPath.map { History(url: URL(fileURLWithPath: $0)) },
+                launcher: launcher)
         case .fileBrowser(let directory, let showHidden):
             FileBrowserMode(directory: directory, showHidden: showHidden, home: home)
         }
