@@ -3,11 +3,11 @@ import RofiCore
 /// Runs one `-show` interaction on the main actor until a mode answers
 /// `.exit`. `sidebar` adds the switcher row (`-sidebar-mode`,
 /// source/view.c:1667-1668); `icons` the icon column (`-show-icons`).
-@MainActor public func runModePanel(switcher: ModeSwitcher, sidebar: Bool, icons: Bool) {
+@MainActor public func runModePanel(switcher: ModeSwitcher, sidebar: Bool, icons: Bool, keymap: Keymap) {
     let model = ModePanelModel(switcher: switcher)
     var style = model.style(sidebar: sidebar)
     style.showIcons = icons
-    runPanel(model: model, style: style, keymap: Keymap(), streaming: nil)
+    runPanel(model: model, style: style, keymap: keymap, streaming: nil)
 }
 
 /// A `-show` mode switcher (source/rofi.c:201-291), which ends when a mode

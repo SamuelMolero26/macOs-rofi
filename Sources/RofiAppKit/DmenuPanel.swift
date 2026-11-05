@@ -10,7 +10,7 @@ import os
     streaming input: (open: @Sendable () -> Int32, separator: UInt8)?
 ) -> DmenuCompletion {
     let model = DmenuPanelModel(session: session)
-    runPanel(model: model, style: model.style, keymap: Keymap(), streaming: input)
+    runPanel(model: model, style: model.style, keymap: session.pipeline.keymap, streaming: input)
     guard let completion = model.completion else {
         preconditionFailure("dmenu panel stopped without a completion")
     }
@@ -116,6 +116,8 @@ import os
     )
     private var suppressTableSelectionChanges = false
     private var finished = false
+    /// The keymap's local key-down monitor while the panel is open.
+    private var keyMonitor: Any?
     /// Finder icons by path, fetched as rows are first shown.
     /// ponytail: never evicted; one image per path shown in this run.
     private var icons: [String: NSImage] = [:]
@@ -164,6 +166,22 @@ import os
             panel.setFrameOrigin(origin)
         }
         panel.orderFrontRegardless()
+        installKeyMonitor()
+    }
+
+    /// Bound key-downs run their action before the window or the field
+    /// editor sees them: the field editor would type Alt+1 as "¡", and AppKit
+    /// swallows Control+Return before `NSWindow.sendEvent` (observed on
+    /// macOS 15), while a local monitor still gets it.
+    private func installKeyMonitor() {
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [unowned self] event in
+            let consumed = MainActor.assumeIsolated {
+                guard let action = keymapAction(for: event, in: panel, keymap: keymap) else { return false }
+                perform { $0.perform(action) }
+                return true
+            }
+            return consumed ? nil : event
+        }
     }
 
     func startStreaming() {
@@ -183,7 +201,6 @@ import os
 
     private func configurePanel() {
         panel.delegate = self
-        panel.keyHandler = { [unowned self] in handleKey($0) }
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
         // A borderless panel has no title bar; the margins and prompt are the drag handle.
@@ -457,6 +474,8 @@ import os
             return
         case .close:
             finished = true
+            keyMonitor.map(NSEvent.removeMonitor)
+            keyMonitor = nil
             panel.orderOut(nil)
             NSApplication.shared.stop(nil)
         case .reload:
@@ -482,16 +501,6 @@ import os
             searchField.stringValue = model.query
             searchField.currentEditor()?.selectedRange = NSRange(location: (model.query as NSString).length, length: 0)
         }
-    }
-
-    /// A key-down bound in the keymap runs its action before the field editor
-    /// sees it, which would type Alt+1 as "¡" and send Control+Return as
-    /// insertLineBreak:. An IME composition keeps every key.
-    private func handleKey(_ event: NSEvent) -> Bool {
-        if let editor = searchField.currentEditor() as? NSTextView, editor.hasMarkedText() { return false }
-        guard let action = keymap.action(for: event) else { return false }
-        perform { $0.perform(action) }
-        return true
     }
 
     @objc private func switcherClicked(_ sender: NSSegmentedControl) {
@@ -629,24 +638,34 @@ extension PanelController: NSWindowDelegate {
 }
 
 private final class DmenuPanel: NSPanel {
-    /// Sees every key-down first; true consumes it.
-    var keyHandler: ((NSEvent) -> Bool)?
-
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+}
 
-    override func sendEvent(_ event: NSEvent) {
-        if event.type == .keyDown, keyHandler?(event) == true { return }
-        super.sendEvent(event)
-    }
+/// The keymap action a key-down in `panel` triggers, or nil to pass the event
+/// on: another window's event, an unbound chord, or a key during an IME
+/// composition.
+@MainActor func keymapAction(for event: NSEvent, in panel: NSWindow, keymap: Keymap) -> KeyAction? {
+    guard event.window === panel else { return nil }
+    if let editor = panel.firstResponder as? NSTextView, editor.hasMarkedText() { return nil }
+    return keymap.action(for: event)
 }
 
 extension KeyChord {
-    /// The chord of a key-down: `charactersIgnoringModifiers`, which keeps
-    /// Shift ("!" for Shift+1), plus Control, Shift, Option and Command.
+    /// The chord of a key-down: its key plus Control, Shift, Option and
+    /// Command. `charactersIgnoringModifiers` may or may not fold Shift into
+    /// a symbol (real Alt+Shift+1 reports "1"), so a printable non-letter key
+    /// takes Shift explicitly ("!", upstream's `exclam`). Letters, control
+    /// characters and function keys (U+F700-U+F8FF; Shift+forward delete
+    /// would turn into U+007F) keep `charactersIgnoringModifiers`.
     init?(event: NSEvent) {
-        guard event.type == .keyDown, let key = event.charactersIgnoringModifiers, !key.isEmpty else { return nil }
+        guard event.type == .keyDown, var key = event.charactersIgnoringModifiers, !key.isEmpty else { return nil }
         let flags = event.modifierFlags
+        if flags.contains(.shift), let char = key.first, key.count == 1, !char.isLetter,
+            char.unicodeScalars.allSatisfy({ ![.control, .privateUse].contains($0.properties.generalCategory) })
+        {
+            key = event.characters(byApplyingModifiers: .shift) ?? key
+        }
         var modifiers: KeyModifiers = []
         if flags.contains(.control) { modifiers.insert(.control) }
         if flags.contains(.shift) { modifiers.insert(.shift) }
