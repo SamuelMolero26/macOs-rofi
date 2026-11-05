@@ -48,6 +48,13 @@ public struct ApplicationLaunchFailure: Error, Equatable, Sendable {
 /// Launches one normalized application record.
 public typealias ApplicationLauncher = (ApplicationRecord) -> Result<Void, ApplicationLaunchFailure>
 
+enum SystemOpenResult: Equatable, Sendable {
+    case terminated(status: Int32, standardError: String)
+    case failed(reason: String)
+}
+
+typealias SystemOpenRunner = (_ path: String, _ directory: String) -> SystemOpenResult
+
 /// Compatibility discovery used until the native AppKit catalog is assembled.
 /// It intentionally contains no Spotlight or AppKit behavior.
 struct FileSystemApplicationCatalog: ApplicationCatalog {
@@ -127,29 +134,45 @@ struct FileSystemApplicationCatalog: ApplicationCatalog {
 func launchApplicationWithSystemOpener(
     _ application: ApplicationRecord
 ) -> Result<Void, ApplicationLaunchFailure> {
+    launchApplicationWithSystemOpener(application, runner: runSystemOpener)
+}
+
+func launchApplicationWithSystemOpener(
+    _ application: ApplicationRecord, runner: SystemOpenRunner
+) -> Result<Void, ApplicationLaunchFailure> {
     let path = application.bundlePath
     let command = "/usr/bin/open '" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    switch runner(path, FileManager.default.currentDirectoryPath) {
+    case .failed(let reason):
+        return .failure(ApplicationLaunchFailure(command: command, reason: reason))
+    case .terminated(0, _):
+        return .success(())
+    case .terminated(let status, let standardError):
+        let text = standardError.trimmingCharacters(in: .whitespacesAndNewlines)
+        let reason = text.isEmpty ? "exited with status \(status)" : text
+        return .failure(ApplicationLaunchFailure(command: command, reason: reason))
+    }
+}
+
+private func runSystemOpener(path: String, directory: String) -> SystemOpenResult {
     let process = Process()
     let errors = Pipe()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
     process.arguments = [path]
-    process.currentDirectoryURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+    process.currentDirectoryURL = URL(fileURLWithPath: directory)
     process.standardInput = FileHandle.nullDevice
     process.standardOutput = FileHandle.nullDevice
     process.standardError = errors
     do {
         try process.run()
     } catch {
-        return .failure(ApplicationLaunchFailure(command: command, reason: error.localizedDescription))
+        return .failed(reason: error.localizedDescription)
     }
     let output = errors.fileHandleForReading.readDataToEndOfFile()
     process.waitUntilExit()
-    guard process.terminationReason == .exit, process.terminationStatus == 0 else {
-        let text = String(decoding: output, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        let reason = text.isEmpty ? "exited with status \(process.terminationStatus)" : text
-        return .failure(ApplicationLaunchFailure(command: command, reason: reason))
-    }
-    return .success(())
+    return .terminated(
+        status: process.terminationStatus,
+        standardError: String(decoding: output, as: UTF8.self))
 }
 
 private func nonEmptyApplicationValue(_ value: String?) -> String? {
