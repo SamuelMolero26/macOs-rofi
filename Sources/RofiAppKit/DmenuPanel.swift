@@ -114,6 +114,9 @@ import os
     )
     private var suppressTableSelectionChanges = false
     private var finished = false
+    /// Finder icons by path, fetched as rows are first shown.
+    /// ponytail: never evicted; one image per path shown in this run.
+    private var icons: [String: NSImage] = [:]
 
     init(model: any PanelModel, style: PanelStyle, input: (open: @Sendable () -> Int32, separator: UInt8)?) {
         self.model = model
@@ -549,7 +552,16 @@ extension PanelController: NSTableViewDataSource, NSTableViewDelegate {
         // styled (include/widgets/textbox.h:122, source/widgets/textbox.c:312-315).
         let state = model.state(of: match)
         cell.stateColor = state.contains(.active) ? .systemBlue : state.contains(.urgent) ? .systemRed : .labelColor
+        cell.imageView?.image = model.iconPath(for: match).map(icon(forFile:))
         return cell
+    }
+
+    /// Only rows the table vends a cell for are looked up.
+    private func icon(forFile path: String) -> NSImage {
+        if let icon = icons[path] { return icon }
+        let icon = NSWorkspace.shared.icon(forFile: path)
+        icons[path] = icon
+        return icon
     }
 
     func tableViewSelectionDidChange(_ notification: Notification) {
@@ -572,9 +584,25 @@ extension PanelController: NSTableViewDataSource, NSTableViewDelegate {
         cell.textField = label
         cell.addSubview(label)
         NSLayoutConstraint.activate([
-            label.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 6),
             label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -6),
             label.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+        ])
+        guard style.showIcons else {
+            label.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 6).isActive = true
+            return cell
+        }
+        // A square as tall as the row, before the text.
+        let icon = NSImageView()
+        icon.imageScaling = .scaleProportionallyUpOrDown
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        cell.imageView = icon
+        cell.addSubview(icon)
+        NSLayoutConstraint.activate([
+            icon.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 6),
+            icon.topAnchor.constraint(equalTo: cell.topAnchor),
+            icon.bottomAnchor.constraint(equalTo: cell.bottomAnchor),
+            icon.widthAnchor.constraint(equalTo: icon.heightAnchor),
+            label.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 4),
         ])
         return cell
     }

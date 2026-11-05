@@ -2,10 +2,12 @@ import RofiCore
 
 /// Runs one `-show` interaction on the main actor until a mode answers
 /// `.exit`. `sidebar` adds the switcher row (`-sidebar-mode`,
-/// source/view.c:1667-1668).
-@MainActor public func runModePanel(switcher: ModeSwitcher, sidebar: Bool) {
+/// source/view.c:1667-1668); `icons` the icon column (`-show-icons`).
+@MainActor public func runModePanel(switcher: ModeSwitcher, sidebar: Bool, icons: Bool) {
     let model = ModePanelModel(switcher: switcher)
-    runPanel(model: model, style: model.style(sidebar: sidebar), streaming: nil)
+    var style = model.style(sidebar: sidebar)
+    style.showIcons = icons
+    runPanel(model: model, style: style, streaming: nil)
 }
 
 /// A `-show` mode switcher (source/rofi.c:201-291), which ends when a mode
@@ -45,6 +47,8 @@ import RofiCore
         if match.row.urgent { state.insert(.urgent) }
         return state
     }
+
+    func iconPath(for match: DmenuMatch) -> String? { switcher.current.iconPath(at: match.sourceIndex) }
 
     func updateQuery(_ query: String) -> PanelUpdate {
         switcher.updateQuery(query)

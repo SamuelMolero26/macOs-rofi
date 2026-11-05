@@ -231,6 +231,13 @@ import Testing
         #expect(try !parse(["-no-sidebar-mode"]).sidebarMode)
     }
 
+    // config/config.c:47, source/xrmoptions.c:145.
+    @Test func showIconsIsABooleanOffByDefault_xrmoptions_c_145() throws {
+        #expect(try !parse([]).showIcons)
+        #expect(try parse(["-show-icons"]).showIcons)
+        #expect(try !parse(["-no-show-icons"]).showIcons)
+    }
+
     // config/config.c:111 and source/xrmoptions.c:364-370: `-show` matching
     // is case-insensitive unless `-case-sensitive`; dmenu alone forces it on
     // without `-i` (source/modes/dmenu.c:605-608).

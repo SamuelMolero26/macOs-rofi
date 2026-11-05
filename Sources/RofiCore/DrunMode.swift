@@ -44,7 +44,7 @@ extension DiskFileSystem: AppBundleSource {
 ///
 /// `.app` bundles take the place of .desktop files and `open` the place of
 /// the Exec line.
-/// ponytail: no icons, actions, generic names, categories, keywords or
+/// ponytail: no actions, generic names, categories, keywords or
 /// `drun-match-fields` / `drun-display-format` (only the name is shown and
 /// matched), no entry cache (drun.c:933-1185), no completer for file
 /// arguments (1366-1388, 1426-1446), no `max-history-size` flag.
@@ -114,6 +114,12 @@ public final class DrunMode: Mode {
     }
 
     public var message: String? { failure }
+
+    /// `_get_icon` (drun.c:1557-1580): the bundle's own icon stands in for
+    /// the desktop file's Icon key (drun.c:790).
+    public func iconPath(at row: Int) -> String? {
+        apps.indices.contains(row) ? apps[row].path : nil
+    }
 
     /// `drun_mode_result` (drun.c:1360-1449).
     public func result(_ action: MenuAction, input: inout String?, selectedRow: Int?) -> ModeResult {
