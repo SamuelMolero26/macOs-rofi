@@ -14,6 +14,12 @@ public struct RasiResolver {
         try evaluator.process(source, stack: [], depth: 0)
         return evaluator.finish()
     }
+
+    func resolveComposite(_ source: RasiSource) throws -> RasiResolution {
+        var evaluator = Evaluator(loader: loader)
+        try evaluator.process(source, stack: [], depth: -1, recordsSource: false)
+        return evaluator.finish()
+    }
 }
 
 private struct PendingDeclaration {
@@ -44,7 +50,12 @@ private struct Evaluator {
     var warnings: [RasiDiagnostic] = []
     var sourceOrder = 0
 
-    mutating func process(_ source: RasiSource, stack: [String], depth: Int) throws {
+    mutating func process(
+        _ source: RasiSource,
+        stack: [String],
+        depth: Int,
+        recordsSource: Bool = true
+    ) throws {
         guard source.text.utf8.count <= Self.maximumSourceBytes else {
             throw fatal(.resourceLimit, "source exceeds the 1 MiB limit", at: point(for: source))
         }
@@ -54,7 +65,7 @@ private struct Evaluator {
         if stack.contains(source.identity) {
             throw fatal(.importCycle, "import cycle includes '\(source.identity)'", at: point(for: source))
         }
-        if !loadedSources.contains(source.identity) {
+        if recordsSource, !loadedSources.contains(source.identity) {
             guard loadedSources.count < Self.maximumSources else {
                 throw fatal(.resourceLimit, "resolution exceeds 128 distinct sources", at: point(for: source))
             }

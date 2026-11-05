@@ -89,6 +89,20 @@ func reportFailedModes(_ modes: [any Mode]) -> Bool {
 
 let args = Arguments(rawArgv: rawCommandLineArguments())
 
+let configuration: RasiConfiguration
+do {
+    configuration = try RasiConfigurationLoader().load(arguments: args)
+} catch {
+    fail("\(error)")
+}
+for warning in configuration.warnings {
+    report("warning: \(warning.source):\(warning.line):\(warning.column): \(warning.message)\n")
+}
+if args.has("-dump-config") {
+    FileHandle.standardOutput.write(Data(configuration.canonicalRasi.utf8))
+    exit(EXIT_SUCCESS)
+}
+
 // source/rofi.c:1043-1057.
 let invokedAsDmenu = args.argv.first?.split(separator: "/").last == "dmenu"
 guard args.has("-dmenu") || invokedAsDmenu else { runShow(args) }

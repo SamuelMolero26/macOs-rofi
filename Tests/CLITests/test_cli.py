@@ -237,6 +237,41 @@ class CLIContractTests(unittest.TestCase):
             + b"/\xef\xbf\xbd: No such file or directory\n",
         )
 
+    def test_dump_config(self):
+        with tempfile.TemporaryDirectory() as home:
+            environment = os.environ.copy()
+            environment["HOME"] = home
+            environment["XDG_CONFIG_HOME"] = str(Path(home) / "config")
+            result = subprocess.run(
+                [
+                    "rofi",
+                    "-dump-config",
+                    "-theme-str",
+                    "configuration { lines: 4; location: south; } "
+                    "window { width: 640px; background-color: #112233; }",
+                ],
+                executable=ROFI,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=environment,
+                check=False,
+            )
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(
+            result.stdout,
+            b"configuration {\n"
+            b"    lines: 4;\n"
+            b"    location: south;\n"
+            b"}\n\n"
+            b"window {\n"
+            b"    background-color: rgba(17, 34, 51, 1);\n"
+            b"    width: 640px;\n"
+            b"}\n",
+        )
+        self.assertEqual(result.stderr, b"")
+
 
 if __name__ == "__main__":
     unittest.main()
