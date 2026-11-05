@@ -22,6 +22,8 @@ public struct DmenuRowState: OptionSet, Equatable, Sendable {
     public static let active = DmenuRowState(rawValue: 2)
     /// Toggled under `-multi-select`, not the highlighted row.
     public static let selected = DmenuRowState(rawValue: 4)
+    /// The row's text is Pango markup.
+    public static let markup = DmenuRowState(rawValue: 8)
 }
 
 /// A dmenu run either completes through a command-line shortcut or needs an

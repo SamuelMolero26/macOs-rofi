@@ -568,21 +568,29 @@ extension PanelController: NSTableViewDataSource, NSTableViewDelegate {
         // Under -markup-rows the ballot is part of the markup, as upstream
         // marks up the whole formatted row (source/modes/dmenu.c:459-460).
         // Invalid markup shows raw.
+        // A script's markup-rows header sets the `.markup` flag instead.
+        let state = model.state(of: match)
         cell.textField?.stringValue = text
-        cell.markup = style.markupRows ? parsePangoMarkup(text) : nil
+        cell.markup = style.markupRows || state.contains(.markup) ? parsePangoMarkup(text) : nil
         // Active wins over urgent; the -multi-select `.selected` flag is not
         // styled (include/widgets/textbox.h:122, source/widgets/textbox.c:312-315).
-        let state = model.state(of: match)
         cell.stateColor = state.contains(.active) ? .systemBlue : state.contains(.urgent) ? .systemRed : .labelColor
-        cell.imageView?.image = model.iconPath(for: match).map(icon(forFile:))
+        if let path = model.iconImagePath(for: match) {
+            cell.imageView?.image = icon(forFile: path, asImage: true)
+        } else {
+            cell.imageView?.image = model.iconPath(for: match).map { icon(forFile: $0, asImage: false) }
+        }
         return cell
     }
 
-    /// Only rows the table vends a cell for are looked up.
-    private func icon(forFile path: String) -> NSImage {
-        if let icon = icons[path] { return icon }
-        let icon = NSWorkspace.shared.icon(forFile: path)
-        icons[path] = icon
+    /// Only rows the table vends a cell for are looked up. Image icons are
+    /// keyed apart (a path never holds NUL) so a file browser row for the
+    /// same file keeps its Finder icon.
+    private func icon(forFile path: String, asImage: Bool) -> NSImage {
+        let key = asImage ? "\0" + path : path
+        if let icon = icons[key] { return icon }
+        let icon = rowIcon(forFile: path, asImage: asImage)
+        icons[key] = icon
         return icon
     }
 
@@ -649,6 +657,12 @@ private final class DmenuPanel: NSPanel {
     guard event.window === panel else { return nil }
     if let editor = panel.firstResponder as? NSTextView, editor.hasMarkedText() { return nil }
     return keymap.action(for: event)
+}
+
+/// The image at `path` when `asImage` and it loads, else the file's Finder
+/// icon, so a script's `.app` icon path still shows the app's icon.
+@MainActor func rowIcon(forFile path: String, asImage: Bool) -> NSImage {
+    (asImage ? NSImage(contentsOfFile: path) : nil) ?? NSWorkspace.shared.icon(forFile: path)
 }
 
 extension KeyChord {

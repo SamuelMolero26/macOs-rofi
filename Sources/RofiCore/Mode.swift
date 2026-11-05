@@ -54,11 +54,17 @@ public protocol Mode: AnyObject {
     /// rofi_view_set_selected_line (source/view.c:369-382), read right after
     /// each `result`. nil keeps the visible selection; the default.
     var selectedRowAfterResult: Int? { get }
+    /// Rows are Pango markup, drawn styled (the MARKUP state bit,
+    /// source/modes/script.c:505-507); false by default.
+    var markupRows: Bool { get }
     /// `_token_match`; by default the row's text must match.
     func matches(_ row: Row, matcher: Matcher) -> Bool
     /// `_get_icon` (source/mode.c:87-96) as the file whose Finder icon a
     /// source row shows; nil for none, the default.
     func iconPath(at row: Int) -> String?
+    /// An image file a source row shows as itself rather than as its Finder
+    /// icon, as a script's `\0icon` row does; nil for none, the default.
+    func iconImagePath(at row: Int) -> String?
     /// `_result`. `input` is the query: set it to replace the query, or to nil
     /// to clear it. `selectedRow` is the source row, or nil when none applies.
     func result(_ action: MenuAction, input: inout String?, selectedRow: Int?) -> ModeResult
@@ -68,7 +74,9 @@ extension Mode {
     public var message: String? { nil }
     public var displayName: String? { nil }
     public var selectedRowAfterResult: Int? { nil }
+    public var markupRows: Bool { false }
     public func iconPath(at row: Int) -> String? { nil }
+    public func iconImagePath(at row: Int) -> String? { nil }
 
     public func matches(_ row: Row, matcher: Matcher) -> Bool {
         matcher.matches(row.text)

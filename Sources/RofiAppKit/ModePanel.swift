@@ -40,15 +40,17 @@ import RofiCore
     /// (source/modes/script.c:508-512).
     func displayText(for match: DmenuMatch) -> String { match.row.display ?? match.row.text }
 
-    /// source/modes/script.c:499-504.
+    /// source/modes/script.c:499-507.
     func state(of match: DmenuMatch) -> DmenuRowState {
         var state: DmenuRowState = []
         if match.row.active { state.insert(.active) }
         if match.row.urgent { state.insert(.urgent) }
+        if switcher.current.markupRows { state.insert(.markup) }
         return state
     }
 
     func iconPath(for match: DmenuMatch) -> String? { switcher.current.iconPath(at: match.sourceIndex) }
+    func iconImagePath(for match: DmenuMatch) -> String? { switcher.current.iconImagePath(at: match.sourceIndex) }
 
     func updateQuery(_ query: String) -> PanelUpdate {
         switcher.updateQuery(query)
