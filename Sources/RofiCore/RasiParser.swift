@@ -86,17 +86,27 @@ private struct ParserState {
 
     private mutating func parseBlock() throws -> RasiStatement {
         let point = currentPoint
-        let selectorStart = index
+        var rawSelectors = ""
         while !isAtEnd && current != "{" {
+            if current == "/", peek() == "/" {
+                try skipLineComment()
+                rawSelectors += " "
+                continue
+            }
+            if current == "/", peek() == "*" {
+                try skipBlockComment()
+                rawSelectors += " "
+                continue
+            }
             if current == "}" || current == ";" {
                 throw failure(.malformedStructure, "expected '{' after selector", at: currentPoint)
             }
+            rawSelectors.unicodeScalars.append(current)
             advance()
         }
         guard current == "{" else {
             throw failure(.malformedStructure, "unterminated selector block", at: point)
         }
-        let rawSelectors = text(from: selectorStart, to: index)
         let selectors = try parseSelectors(rawSelectors, at: point)
         advance()
 

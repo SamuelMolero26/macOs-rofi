@@ -99,23 +99,53 @@ import Testing
         #expect(result.warnings.map(\.code).contains(.unsupportedSelector))
     }
 
-    @Test func importsAtDirectivePositionAndThemeResetsOnlyVisualState() throws {
+    @Test func commentsInsideSelectorTextAreIgnored() throws {
+        let result = try RasiResolver().resolve(
+            RasiSource(
+                identity: "selector-comments.rasi",
+                text: "window /* selector comment */ { background-color: #123456; }"
+            )
+        )
+
+        #expect(
+            result.color(selector: .window, property: .backgroundColor)
+                == .init(red: 18.0 / 255, green: 52.0 / 255, blue: 86.0 / 255))
+    }
+
+    @Test func importsMergeAtDirectivePosition() throws {
+        let root = RasiSource(
+            identity: "/themes/root.rasi",
+            text: """
+                window { background-color: red; }
+                @import "merge"
+                window { background-color: blue; }
+                """
+        )
+        let imported = RasiSource(
+            identity: "/themes/merge.rasi",
+            text: "window { background-color: green; }"
+        )
+
+        let result = try RasiResolver(loader: { _ in imported }).resolve(root)
+
+        #expect(result.color(selector: .window, property: .backgroundColor) == .init(red: 0, green: 0, blue: 1))
+        #expect(result.declarations.map(\.source) == [root.identity, imported.identity, root.identity])
+    }
+
+    @Test func themeResetsOnlyVisualState() throws {
         let root = RasiSource(
             identity: "/themes/root.rasi",
             text: """
                 configuration { lines: 7; }
                 window { text-color: red; }
-                @import "merge"
-                window { background-color: blue; }
                 @theme "replacement"
                 """
         )
-        let sources = [
-            "merge": RasiSource(identity: "/themes/merge.rasi", text: "window { text-color: green; }"),
-            "replacement": RasiSource(
-                identity: "/themes/replacement.rasi", text: "window { background-color: #010203; }"),
-        ]
-        let resolver = RasiResolver { request in sources[request.target] }
+        let replacement = RasiSource(
+            identity: "/themes/replacement.rasi",
+            text: "window { background-color: #010203; }"
+        )
+        let resolver = RasiResolver { _ in replacement }
 
         let result = try resolver.resolve(root)
 
@@ -124,7 +154,23 @@ import Testing
         #expect(
             result.color(selector: .window, property: .backgroundColor)
                 == .init(red: 1.0 / 255, green: 2.0 / 255, blue: 3.0 / 255))
-        #expect(result.loadedSources == ["/themes/root.rasi", "/themes/merge.rasi", "/themes/replacement.rasi"])
+        #expect(result.loadedSources == ["/themes/root.rasi", "/themes/replacement.rasi"])
+    }
+
+    @Test func importedTypedFailuresPreserveTheirDiagnostic() throws {
+        let resolver = RasiResolver { _ in
+            try RasiSource(identity: "/themes/invalid.rasi", bytes: [0xFF])
+        }
+
+        do {
+            _ = try resolver.resolve(RasiSource(identity: "/themes/root.rasi", text: "@import \"invalid\""))
+            Issue.record("Expected imported invalid UTF-8 to fail")
+        } catch let failure as RasiFailure {
+            #expect(failure.diagnostic.code == .invalidUTF8)
+            #expect(failure.diagnostic.source == "/themes/invalid.rasi")
+            #expect(failure.diagnostic.line == 1)
+            #expect(failure.diagnostic.column == 1)
+        }
     }
 
     @Test func optionalMissingImportWarnsButRequiredMissingImportFails() throws {

@@ -95,6 +95,8 @@ private struct Evaluator {
         let loaded: RasiSource?
         do {
             loaded = try loader(request)
+        } catch let failure as RasiFailure {
+            throw failure
         } catch {
             throw fatal(.missingImport, "could not load '\(target)': \(error)", at: point)
         }
