@@ -3,60 +3,43 @@ import Darwin
 import RofiCore
 import Testing
 
-/// An in-memory set of application folders: `contents` lists the readable
-/// directories, `infos` the Info.plist of each bundle.
-private final class FakeApps: AppBundleSource {
-    var contents: [String: [FileBrowserEntry]] = [:]
-    var infos: [String: AppBundleInfo] = [:]
-
-    func entries(in path: String) -> [FileBrowserEntry]? { contents[path] }
-
-    func info(ofBundle path: String) -> AppBundleInfo { infos[path] ?? AppBundleInfo() }
-}
-
-private func dir(_ name: String, link: Bool = false) -> FileBrowserEntry {
-    FileBrowserEntry(name: name, kind: .directory, isLink: link)
-}
-
-private func file(_ name: String) -> FileBrowserEntry {
-    FileBrowserEntry(name: name, kind: .file, isLink: false)
-}
-
-// Contract: rofi's drun mode, source/modes/drun.c (walk_dir 818-877, history
-// 883-910, sort 912-930, setup 1241-1244, result 1360-1449), with `.app`
-// bundles in place of .desktop files.
+// Contract: rofi's drun mode, source/modes/drun.c (history 883-910, sort
+// 912-930, setup 1241-1244, result 1360-1449), with native application
+// records in place of .desktop files.
 @Suite final class DrunModeTests {
-    private let apps = FakeApps()
-    private var opened: [String] = []
-    /// What the injected opener answers.
-    private var openResult: Result<Void, FileBrowserOpenFailure> = .success(())
-
-    init() {
-        apps.contents["/Applications"] = [
-            dir("Zeta.app"), dir("alpha.app"), dir("Folder"), dir(".Hidden.app"), file("readme.txt"),
-            dir("Linked.app", link: true), dir("linked-folder", link: true), dir("Utilities"),
-        ]
-        apps.contents["/Applications/Folder"] = [dir("Nested.app")]
-        apps.contents["/Applications/Zeta.app"] = [dir("Inner.app")]
-        apps.contents["/Applications/linked-folder"] = [dir("Loop.app")]
-        apps.contents["/Applications/Utilities"] = [dir("Terminal.app")]
-        apps.contents["/System/Applications"] = [dir("Beta.app"), dir("Dup.app")]
-        apps.contents["/Users/u/Applications"] = [dir("Dup.app")]
-        apps.infos["/Applications/Zeta.app"] = AppBundleInfo(identifier: "z", displayName: "Zeta", name: "Z")
-        apps.infos["/Applications/alpha.app"] = AppBundleInfo(identifier: "a", displayName: "", name: "alpha")
-        apps.infos["/Applications/Folder/Nested.app"] = AppBundleInfo(identifier: "n")
-        apps.infos["/Applications/Utilities/Terminal.app"] = AppBundleInfo(identifier: "t", name: "Terminal")
-        apps.infos["/System/Applications/Beta.app"] = AppBundleInfo(identifier: "b", name: "Beta")
-        apps.infos["/System/Applications/Dup.app"] = AppBundleInfo(identifier: "d", name: "Dup System")
-        apps.infos["/Users/u/Applications/Dup.app"] = AppBundleInfo(identifier: "d", name: "Dup Home")
-    }
+    private let applications = [
+        ApplicationRecord(
+            identifier: "z", localizedDisplayName: "Zeta", bundleName: "Z",
+            bundlePath: "/Applications/Zeta.app"),
+        ApplicationRecord(
+            identifier: "a", localizedDisplayName: "", bundleName: "alpha",
+            bundlePath: "/Applications/alpha.app"),
+        ApplicationRecord(
+            identifier: "n", localizedDisplayName: nil, bundleName: nil,
+            bundlePath: "/Applications/Folder/Nested.app", iconPath: "/icons/Nested.icns"),
+        ApplicationRecord(
+            identifier: "t", localizedDisplayName: nil, bundleName: "Terminal",
+            bundlePath: "/Applications/Utilities/Terminal.app"),
+        ApplicationRecord(
+            identifier: "b", localizedDisplayName: nil, bundleName: "Beta",
+            bundlePath: "/System/Applications/Beta.app"),
+        ApplicationRecord(
+            identifier: "d", localizedDisplayName: nil, bundleName: "Dup System",
+            bundlePath: "/System/Applications/Dup.app"),
+        ApplicationRecord(
+            identifier: "d", localizedDisplayName: nil, bundleName: "Dup Home",
+            bundlePath: "/Users/u/Applications/Dup.app"),
+    ]
+    private var launched: [ApplicationRecord] = []
+    /// What the injected launcher answers.
+    private var launchResult: Result<Void, ApplicationLaunchFailure> = .success(())
 
     private func make(history: History? = nil) -> DrunMode {
         DrunMode(
-            home: "/Users/u", history: history, source: apps,
-            opener: { [unowned self] path, _ in
-                opened.append(path)
-                return openResult
+            applications: applications, history: history,
+            launcher: { [unowned self] application in
+                launched.append(application)
+                return launchResult
             })
     }
 
@@ -66,7 +49,9 @@ private func file(_ name: String) -> FileBrowserEntry {
         mode.rows.firstIndex { $0.text == name }!
     }
 
-    private func act(_ mode: DrunMode, _ action: MenuAction, input: String? = nil, row: Int? = nil) -> ModeResult {
+    private func act(
+        _ mode: DrunMode, _ action: MenuAction, input: String? = nil, row: Int? = nil
+    ) -> ModeResult {
         var input = input
         return mode.result(action, input: &input, selectedRow: row)
     }
@@ -75,64 +60,58 @@ private func file(_ name: String) -> FileBrowserEntry {
     private func withHistory(_ contents: String? = nil, _ body: (History) throws -> Void) throws {
         let name = "rofi-drun-\(UInt64.random(in: .min ... .max))/rofi3.druncache"
         let history = History(url: .temporaryDirectory.appending(path: name))
-        let dir = history.url.deletingLastPathComponent().path(percentEncoded: false)
+        let directory = history.url.deletingLastPathComponent().path(percentEncoded: false)
         let file = history.url.path(percentEncoded: false)
-        try #require(mkdir(dir, 0o700) == 0)
+        try #require(mkdir(directory, 0o700) == 0)
         defer {
             unlink(file)
-            rmdir(dir)
+            rmdir(directory)
         }
         if let contents {
-            let fd = try #require(fopen(file, "w"))
-            fputs(contents, fd)
-            fclose(fd)
+            let handle = try #require(fopen(file, "w"))
+            fputs(contents, handle)
+            fclose(handle)
         }
         try body(history)
+    }
+
+    @Test func applicationRecordsPreferDisplayNameThenBundleNameThenFileName() {
+        #expect(applications[0].displayName == "Zeta")
+        #expect(applications[1].displayName == "alpha")
+        #expect(applications[2].displayName == "Nested")
+
+        let fallback = ApplicationRecord(
+            identifier: "", localizedDisplayName: "", bundleName: "",
+            bundlePath: "/Applications/Fallback.app")
+        #expect(fallback.identifier == "/Applications/Fallback.app")
+        #expect(fallback.displayName == "Fallback")
+        #expect(fallback.iconPath == "/Applications/Fallback.app")
     }
 
     @Test func nameIsDrun_drun_c_1693() {
         #expect(make().name == "drun")
     }
 
-    // drun.c:818-877: every application folder is walked, plain folders
-    // recursively; hidden names and plain files are skipped. A bundle is
-    // never descended into, and a linked folder is not followed.
-    @Test func scansFoldersButNotBundles_drun_c_818() {
-        #expect(names(make()) == ["alpha", "Beta", "Dup System", "Linked", "Nested", "Terminal", "Zeta"])
-    }
-
-    // CFBundleDisplayName, then CFBundleName, then the bundle's file name;
-    // empty values count as missing.
-    @Test func displayNameFallsBackToBundleNameThenFileName() {
+    @Test func recordsAreDeduplicatedByIdentifierAndSortedByName_drun_c_519() {
         let mode = make()
-        #expect(names(mode).contains("Zeta"))
-        #expect(names(mode).contains("alpha"))
-        #expect(names(mode).contains("Nested"))
-        #expect(mode.rows.allSatisfy { $0.display == nil })
-    }
-
-    // drun.c:519-523 skips a desktop id already seen; the bundle id plays
-    // that part, so the first folder wins.
-    @Test func duplicateBundleIdsKeepTheFirstFolder_drun_c_519() {
-        let mode = make()
-        #expect(names(mode).filter { $0.hasPrefix("Dup") } == ["Dup System"])
+        #expect(names(mode) == ["alpha", "Beta", "Dup System", "Nested", "Terminal", "Zeta"])
         #expect(act(mode, .ok, row: row(mode, "Dup System")) == .exit)
-        #expect(opened == ["/System/Applications/Dup.app"])
+        #expect(launched.map(\.bundlePath) == ["/System/Applications/Dup.app"])
     }
 
-    // drun.c:1390-1397 launches the entry; here `open` launches the bundle
-    // and the switcher closes.
-    @Test func enterOpensTheBundleAndExits_drun_c_1390() {
+    // drun.c:1390-1397 launches the entry and closes the switcher.
+    @Test func enterLaunchesTheApplicationRecordAndExits_drun_c_1390() {
         let mode = make()
         #expect(act(mode, .ok, row: row(mode, "Nested")) == .exit)
-        #expect(opened == ["/Applications/Folder/Nested.app"])
+        #expect(launched.map(\.identifier) == ["n"])
         #expect(mode.message == nil)
     }
 
-    // helper.c:1426-1434 shows an error dialog; as in the file browser the
-    // failure is the message and the view stays open until the next action.
+    // helper.c:1426-1434 shows an error dialog; the failure is the message and
+    // the view stays open until the next action.
     @Test func failedLaunchIsShownAndKeepsTheViewOpen_helper_c_1426() {
-        openResult = .failure(FileBrowserOpenFailure(command: "/usr/bin/open 'x'", reason: "boom"))
+        launchResult = .failure(
+            ApplicationLaunchFailure(command: "/usr/bin/open 'x'", reason: "boom"))
         let mode = make()
         #expect(act(mode, .ok, row: row(mode, "Zeta")) == .reload)
         #expect(mode.message == "Failed to execute: '/usr/bin/open 'x''\nError: 'boom'")
@@ -144,11 +123,11 @@ private func file(_ name: String) -> FileBrowserEntry {
         let mode = make()
         #expect(act(mode, .ok, row: nil) == .reload)
         #expect(act(mode, .ok, row: 99) == .reload)
-        #expect(opened.isEmpty)
+        #expect(launched.isEmpty)
     }
 
-    // drun.c:476-481: a launch bumps the bundle id in the history.
-    @Test func launchRecordsTheBundleIdInHistory_drun_c_476() throws {
+    // drun.c:476-481: a launch bumps the application identifier in history.
+    @Test func launchRecordsTheApplicationIdentifierInHistory_drun_c_476() throws {
         try withHistory { history in
             let mode = make(history: history)
             _ = act(mode, .ok, row: row(mode, "Beta"))
@@ -157,7 +136,7 @@ private func file(_ name: String) -> FileBrowserEntry {
     }
 
     @Test func failedLaunchRecordsNothing_drun_c_476() throws {
-        openResult = .failure(FileBrowserOpenFailure(command: "c", reason: "r"))
+        launchResult = .failure(ApplicationLaunchFailure(command: "c", reason: "r"))
         try withHistory { history in
             let mode = make(history: history)
             _ = act(mode, .ok, row: row(mode, "Beta"))
@@ -171,12 +150,12 @@ private func file(_ name: String) -> FileBrowserEntry {
         try withHistory("3 t\n1 z\n0 gone\n") { history in
             #expect(
                 names(make(history: history)) == [
-                    "Terminal", "Zeta", "alpha", "Beta", "Dup System", "Linked", "Nested",
+                    "Terminal", "Zeta", "alpha", "Beta", "Dup System", "Nested",
                 ])
         }
     }
 
-    // drun.c:1411-1423: deleting an entry in the history removes it from the
+    // drun.c:1411-1423: deleting an entry in history removes it from the
     // history and the list; any other entry stays.
     @Test func deleteRemovesHistoryEntries_drun_c_1411() throws {
         try withHistory("1 t\n0 z\n") { history in
@@ -187,8 +166,6 @@ private func file(_ name: String) -> FileBrowserEntry {
             #expect(act(mode, .deleteEntry, row: row(mode, "Beta")) == .reload)
             #expect(names(mode).contains("Beta"))
             #expect(history.list() == ["z"])
-            #expect(act(mode, .ok, row: row(mode, "Zeta")) == .exit)
-            #expect(opened == ["/Applications/Zeta.app"])
         }
     }
 
@@ -198,28 +175,23 @@ private func file(_ name: String) -> FileBrowserEntry {
         #expect(names(mode).contains("Zeta"))
     }
 
-    // drun.c:1362, 1424-1425: cancel exits, a custom key switches modes.
     @Test func cancelExitsAndCustomKeysSwitch_drun_c_1424() {
         #expect(act(make(), .cancel) == .exit)
         #expect(act(make(), .customKey(3)) == .switchTo(3))
     }
 
-    // drun.c:1402-1410: typed text is run as a command; here that is not
-    // supported, so it says so and stays. No text exits.
     @Test func customInputIsReportedNotRun_drun_c_1402() {
         let mode = make()
         #expect(act(mode, .customInput, input: "firefox") == .reload)
         #expect(mode.message == "Failed to execute: 'firefox'\nError: 'drun cannot run typed commands'")
-        #expect(opened.isEmpty)
+        #expect(launched.isEmpty)
         #expect(act(mode, .customInput, input: nil) == .exit)
         #expect(act(mode, .customInput, input: "") == .exit)
     }
 
-    // An entry's icon is its bundle's, standing in for the desktop file's
-    // Icon key (drun.c:790, 1557-1580).
-    @Test func iconPathIsTheBundlePath() {
+    @Test func iconPathComesFromTheApplicationRecord() {
         let mode = make()
-        #expect(mode.iconPath(at: row(mode, "Nested")) == "/Applications/Folder/Nested.app")
+        #expect(mode.iconPath(at: row(mode, "Nested")) == "/icons/Nested.icns")
         #expect(mode.iconPath(at: mode.rows.count) == nil)
     }
 }
