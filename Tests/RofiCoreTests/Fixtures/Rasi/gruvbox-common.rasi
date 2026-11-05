@@ -1,0 +1,15 @@
+/*
+ * Derived from upstream rofi themes/gruvbox-common.rasinc at commit
+ * 1ad1df6b72d4c8b0e40e8ced1249ef8a8a6bc0ad; see gruvbox-dark.rasi attribution.
+ */
+window {
+    background-color: @background;
+    border: 2;
+    padding: 2;
+}
+mainbox { border: 0; padding: 0; }
+listview {
+    border: 2px solid 0 0;
+    children: [ element-text, element-icon ];
+}
+element.normal.normal { text-color: @foreground; }
