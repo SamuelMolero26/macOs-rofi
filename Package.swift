@@ -13,5 +13,6 @@ let package = Package(
         .target(name: "RofiAppKit", dependencies: ["RofiCore"]),
         .executableTarget(name: "rofi", dependencies: ["RofiCore", "RofiAppKit"]),
         .testTarget(name: "RofiCoreTests", dependencies: ["RofiCore"]),
+        .testTarget(name: "RofiAppKitTests", dependencies: ["RofiCore", "RofiAppKit"]),
     ]
 )
