@@ -87,8 +87,8 @@ class CLIContractTests(unittest.TestCase):
         )
 
     # source/rofi.c:946-950, 547-562, 732-739: built-in modes such as run do
-    # not exist yet; the known list names the built-ins drun (enabled by
-    # default, config/config.c:36-42) and filebrowser.
+    # not exist yet; the known list names the built-ins drun and filebrowser,
+    # both enabled by default.
     def test_show_unimplemented_builtin_diagnoses_and_exits_dataerr(self):
         result = self.run_rofi("rofi", "-show", "run")
 
@@ -99,18 +99,19 @@ class CLIContractTests(unittest.TestCase):
             b"rofi: The following errors were detected when starting rofi:\n\n\n"
             b"Mode run is not found.\nThe following modes are known:\n"
             b"        * +drun\n"
-            b"        * filebrowser\n\n",
+            b"        * +filebrowser\n\n",
         )
 
-    # source/rofi.c:564-595, config/config.c:36-42: with no mode list, drun
-    # is the enabled default.
-    def test_drun_is_the_default_enabled_mode(self):
+    # source/rofi.c:564-595: with no mode list, drun and filebrowser are the
+    # enabled defaults (upstream's window/run/ssh do not exist here).
+    def test_drun_and_filebrowser_are_the_default_enabled_modes(self):
         result = self.run_rofi("rofi")
 
         self.assertEqual(result.returncode, 0)
         self.assertIn(
-            b"The following modes are enabled:\n    \xe2\x80\xa2 drun\n"
-            b"\nThe following modes can be enabled:\n    \xe2\x80\xa2 filebrowser\n",
+            b"The following modes are enabled:\n"
+            b"    \xe2\x80\xa2 drun\n    \xe2\x80\xa2 filebrowser\n"
+            b"\nThe following modes can be enabled:\n",
             result.stderr,
         )
 
