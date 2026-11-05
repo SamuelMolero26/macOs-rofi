@@ -72,7 +72,10 @@ func reportFailedModes(_ modes: [any Mode]) -> Bool {
         report(options.unsureWhatToShow)
         exit(EXIT_SUCCESS)
     }
-    let modes = makeModes(options.modes)
+    let applicationCatalog = NativeApplicationCatalog()
+    let modes = makeModes(
+        options.modes, applications: applicationCatalog.applications,
+        launcher: applicationCatalog.launch)
     // run_mode_index: a script that cannot start shows an error dialog in
     // place of the view (source/rofi.c:201-216, source/modes/script.c:242-246).
     if reportFailedModes(modes) { exit(EXIT_SUCCESS) }

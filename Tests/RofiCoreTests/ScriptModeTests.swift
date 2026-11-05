@@ -288,6 +288,81 @@ private let reportRun = """
         #expect(modes.allSatisfy { $0 is ScriptMode && $0.rows.map(\.text) == ["row"] })
     }
 
+    @Test func drunAssemblyReceivesApplicationRecordsAndPropagatesItsLauncherFailure() throws {
+        let application = ApplicationRecord(
+            identifier: "com.example.discovered", localizedDisplayName: "Discovered",
+            bundleName: nil, bundlePath: "/Applications/Discovered.app",
+            iconPath: "/icons/Discovered.icns")
+        let failure = ApplicationLaunchFailure(
+            command: "open application '/Applications/Discovered.app'", reason: "refused")
+        var loadCount = 0
+        var launched: [ApplicationRecord] = []
+
+        let modes = makeModes(
+            [.drun(historyPath: nil)],
+            applications: {
+                loadCount += 1
+                return [application]
+            },
+            launcher: { record in
+                launched.append(record)
+                return .failure(failure)
+            })
+        let mode = try #require(modes.first as? DrunMode)
+
+        #expect(loadCount == 1)
+        #expect(mode.rows.map(\.text) == ["Discovered"])
+        #expect(mode.iconPath(at: 0) == "/icons/Discovered.icns")
+        var input: String?
+        #expect(mode.result(.ok, input: &input, selectedRow: 0) == .reload)
+        #expect(launched == [application])
+        #expect(mode.message == failure.dialogText)
+    }
+
+    @Test func modeSelectionKeepsFileBrowserIndependentFromNativeApplications() throws {
+        let browserEntry = fixtures.script("browser-entry", "echo row")
+        let options = try ShowOptions(
+            arguments: Arguments([
+                "rofi", "-modes", "filebrowser", "-show", "drun",
+                "-filebrowser-directory", fixtures.directory,
+            ]))
+        var loadCount = 0
+        let application = ApplicationRecord(
+            identifier: "com.example.app", localizedDisplayName: "Example", bundleName: nil,
+            bundlePath: "/Applications/Example.app")
+
+        let modes = makeModes(
+            options.modes,
+            applications: {
+                loadCount += 1
+                return [application]
+            },
+            launcher: { _ in .success(()) })
+
+        #expect(options.startIndex == 1)
+        #expect(modes.map(\.name) == ["filebrowser", "drun"])
+        #expect(loadCount == 1)
+        let fileBrowser = try #require(modes[0] as? FileBrowserMode)
+        let drun = try #require(modes[1] as? DrunMode)
+        let browserRow = try #require(fileBrowser.rows.firstIndex { $0.text == "browser-entry" })
+        #expect(fileBrowser.iconPath(at: browserRow) == browserEntry)
+        #expect(drun.iconPath(at: 0) == "/Applications/Example.app")
+
+        loadCount = 0
+        _ = makeModes(
+            [.fileBrowser(directory: fixtures.directory, showHidden: false)],
+            applications: {
+                loadCount += 1
+                return [application]
+            },
+            launcher: { _ in .success(()) })
+        #expect(loadCount == 0)
+
+        let defaults = try ShowOptions(arguments: Arguments(["rofi", "-show", "drun"]))
+        #expect(defaults.modes.map(\.name) == ["drun"])
+        #expect(defaults.startIndex == 0)
+    }
+
     // The proof mode: two scripts in one switcher, with prompts from their
     // headers, switching and accepting.
     @Test func switcherMovesBetweenTwoScripts() {

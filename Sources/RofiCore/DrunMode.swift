@@ -69,21 +69,6 @@ public final class DrunMode: Mode {
         rows = self.applications.map { Row(parsing: $0.record.displayName) }
     }
 
-    /// Transitional assembly retained until the native catalog is wired in
-    /// T3. The mode's designated seam remains records plus a launcher.
-    public convenience init(home: String, history: History?) {
-        let catalog = FileSystemApplicationCatalog(home: home)
-        self.init(
-            applications: catalog.applications(), history: history,
-            launcher: launchApplicationWithSystemOpener)
-    }
-
-    /// The compatibility folders searched in order. Native discovery replaces
-    /// this list when the AppKit catalog is assembled.
-    public static func applicationDirectories(home: String) -> [String] {
-        FileSystemApplicationCatalog.applicationDirectories(home: home)
-    }
-
     public var message: String? { failure }
 
     /// `_get_icon` (drun.c:1557-1580): the catalog supplies the icon identity.
