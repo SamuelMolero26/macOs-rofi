@@ -140,7 +140,7 @@ private let reportRun = """
         #expect(texts(mode) == ["x", "y"])
     }
 
-    // Headers that are parsed but not implemented never become rows.
+    // Header lines never become rows.
     @Test func otherHeadersAreNotRows() {
         let path = fixtures.script(
             "s", #"printf '\000markup-rows\037true\n\000urgent\0370\n\000keep-filter\037true\nrow\n'"#)
@@ -281,6 +281,151 @@ private let reportRun = """
         #expect(mode.rows.map { mode.matches($0, matcher: matcher) } == [true, false, true])
     }
 
+    // script.c:167-170, 350-358, 495-504: urgent and active headers add row
+    // ranges (dmenu's -u/-a syntax), ORed with each row's own flag; they are
+    // cleared before every re-run.
+    @Test func urgentAndActiveHeadersMarkRanges_script_c_167() {
+        let path = fixtures.script(
+            "s",
+            reportRun + #"\#nprintf '\000urgent\0370,2-3\n\000urgent\037-1\n\000active\0371\n\000active\0374\n'"#
+                + #"\#nprintf 'a\nb\000urgent\037true\nc\nd\ne\nf\000active\037true\n'"#)
+        let mode = ScriptMode(name: "s", command: path)
+        #expect(mode.rows.map(\.urgent) == [true, true, true, true, false, true])
+        #expect(mode.rows.map(\.active) == [false, true, false, false, true, true])
+
+        #expect(perform(mode, .ok, row: 0).result == .reload)
+        #expect(!mode.rows.contains { $0.urgent || $0.active })
+    }
+
+    // script.c:165-166, 505-507, 529-531: markup-rows persists across runs
+    // and rows match on their markup's text; invalid markup never matches.
+    @Test func markupRowsMatchOnTheMarkupText_script_c_529() {
+        let path = fixtures.script(
+            "s", reportRun + #"\#nprintf '\000markup-rows\037true\n<b>foo</b>\nplain\n<b>bad\n'"#)
+        let mode = ScriptMode(name: "s", command: path)
+        #expect(mode.markupRows)
+        let foo = Matcher(query: "foo", options: MatchOptions())
+        let tag = Matcher(query: "b", options: MatchOptions())
+        let bad = Matcher(query: "bad", options: MatchOptions())
+        #expect(mode.rows.map { mode.matches($0, matcher: foo) } == [true, false, false])
+        #expect(mode.rows.map { mode.matches($0, matcher: tag) } == [false, false, false])
+        #expect(mode.rows.map { mode.matches($0, matcher: bad) } == [false, false, false])
+
+        #expect(perform(mode, .ok, row: 1).result == .reload)
+        #expect(mode.markupRows)
+    }
+
+    // script.c:211-213, 378-379, 446-449: keep-filter comes from the output
+    // the user acted on and is reset every run.
+    @Test func keepFilterKeepsTheInput_script_c_446() {
+        let path = fixtures.script(
+            "s",
+            #"""
+            case "$1" in
+              "") printf 'a\n' ;;
+              a) printf '\000keep-filter\037true\nk\n' ;;
+              *) printf 'z\n' ;;
+            esac
+            """#)
+        let mode = ScriptMode(name: "s", command: path)
+        #expect(perform(mode, .ok, input: "q", row: 0) == (.reload, nil))
+        #expect(perform(mode, .ok, input: "q", row: 0) == (.reload, "q"))
+        #expect(perform(mode, .ok, input: "q", row: 0) == (.reload, nil))
+    }
+
+    // script.c:177-182, 211-213, 378-379, 434-443: keep-selection comes from
+    // the output acted on and keeps the selected row, or new-selection
+    // (strtoll base 0) from the new output when it is a row; both are reset
+    // every run. Custom input has no row, so row 0.
+    @Test func keepSelectionAndNewSelection_script_c_434() {
+        let path = fixtures.script(
+            "s",
+            #"""
+            case "$1" in
+              b) printf '\000new-selection\0370x2\n' ;;
+              c) printf '\000new-selection\0379\n' ;;
+            esac
+            [ "$1" = a ] || printf '\000keep-selection\037true\n'
+            printf 'a\nb\nc\n'
+            """#)
+        let mode = ScriptMode(name: "s", command: path)
+        let steps: [(MenuAction, Int?, Int)] = [
+            (.ok, 1, 2),  // new-selection 0x2
+            (.ok, 2, 2),  // new-selection 9 is out of range: row 2 kept
+            (.ok, 0, 0),  // kept row 0; this output has no keep-selection
+            (.ok, 1, 0),  // so its new-selection is ignored
+            (.customInput, nil, 0),
+        ]
+        for (action, row, selected) in steps {
+            #expect(perform(mode, action, row: row).result == .reload)
+            #expect(mode.selectedRowAfterResult == selected)
+        }
+    }
+
+    // The switcher shows the kept source row at its visible position.
+    @Test func switcherKeepsTheSelectedRow() {
+        let path = fixtures.script("s", #"printf '\000keep-selection\037true\na\nb\nc\n'"#)
+        var s = ModeSwitcher(modes: makeModes([.script(name: "s", path: path)]))
+        s.selectVisibleIndex(2)
+        let open = s.accept()
+        #expect(open)
+        #expect(s.selectedVisibleIndex == 2)
+    }
+
+    // script.c:186-190: the theme header is not applied (#73) and leaves the
+    // rows and other headers alone.
+    @Test func themeHeaderIsIgnored_script_c_186() {
+        let path = fixtures.script(
+            "s", #"printf '\000theme\037window { width: 10; }\n\000prompt\037P\nrow\n'"#)
+        let mode = ScriptMode(name: "s", command: path)
+        #expect(texts(mode) == ["row"])
+        #expect(mode.displayName == "P")
+        #expect(!mode.markupRows)
+    }
+
+    // script.c:422-428: a run whose output names a known mode switches to
+    // it; its rows are dropped and the input is cleared.
+    @Test func switchModeHeaderSwitchesToTheNamedMode_script_c_422() {
+        let path = fixtures.script(
+            "s", #"[ "$ROFI_RETV" = 0 ] && echo a || printf '\000switch-mode\037other\nnew\n'"#)
+        let mode = ScriptMode(name: "s", command: path, modeNames: ["s", "other"])
+        let (result, input) = perform(mode, .ok, row: 0)
+        #expect(result == .switchTo(1))
+        #expect(input == nil)
+        #expect(texts(mode) == ["a"])
+    }
+
+    // script.c:137-146: an unknown name is ignored.
+    @Test func switchModeHeaderIgnoresAnUnknownMode_script_c_141() {
+        let path = fixtures.script(
+            "s", #"[ "$ROFI_RETV" = 0 ] && echo a || printf '\000switch-mode\037nope\nnew\n'"#)
+        let mode = ScriptMode(name: "s", command: path, modeNames: ["s", "other"])
+        #expect(perform(mode, .ok, row: 0).result == .reload)
+        #expect(texts(mode) == ["new"])
+    }
+
+    // script.c:341: the header of the first run is dropped.
+    @Test func switchModeHeaderOfTheFirstRunIsIgnored_script_c_341() {
+        let path = fixtures.script(
+            "s", #"[ "$ROFI_RETV" = 0 ] && printf '\000switch-mode\037other\na\n' || echo new"#)
+        let mode = ScriptMode(name: "s", command: path, modeNames: ["s", "other"])
+        #expect(perform(mode, .ok, row: 0).result == .reload)
+        #expect(texts(mode) == ["new"])
+    }
+
+    // source/rofi.c:161-168: names resolve against the mode list.
+    @Test func switchModeResolvesNamesFromTheModeList() {
+        let path = fixtures.script(
+            "s", #"[ "$ROFI_RETV" = 0 ] && echo a || printf '\000switch-mode\037filebrowser\n'"#)
+        var s = ModeSwitcher(
+            modes: makeModes([.script(name: "s", path: path), .fileBrowser(directory: "/", showHidden: false)]))
+        s.updateQuery("a")
+        let open = s.accept()
+        #expect(open)
+        #expect(s.current.name == "filebrowser")
+        #expect(s.query == "")
+    }
+
     @Test func modesAreMadeFromTheModeList() {
         let path = fixtures.script("s", "echo row")
         let modes = makeModes([.script(name: "a", path: path), .script(name: "b", path: path)])
@@ -361,6 +506,26 @@ private let reportRun = """
         let defaults = try ShowOptions(arguments: Arguments(["rofi", "-show", "drun"]))
         #expect(defaults.modes.map(\.name) == ["drun", "filebrowser"])
         #expect(defaults.startIndex == 0)
+    }
+
+    // script.c:100-101: `\0icon` is a comma list tried in order. Only an
+    // absolute path that exists is drawn; theme names wait for #73.
+    @Test func iconImagePathIsTheFirstExistingAbsolutePath_script_c_100() {
+        let file = fixtures.directory
+        let missing = file + "/missing.png"
+        let path = fixtures.script(
+            "s",
+            """
+            printf 'path\\000icon\\037\(file)\\n'
+            printf 'fallback\\000icon\\037firefox,\(missing),\(file)\\n'
+            printf 'name\\000icon\\037firefox\\n'
+            printf 'gone\\000icon\\037\(missing)\\n'
+            printf 'none\\n'
+            """)
+        let mode = ScriptMode(name: "s", command: path)
+        #expect(texts(mode) == ["path", "fallback", "name", "gone", "none"])
+        #expect((0...5).map(mode.iconImagePath(at:)) == [file, file, nil, nil, nil, nil])
+        #expect(mode.iconPath(at: 0) == nil)
     }
 
     // The proof mode: two scripts in one switcher, with prompts from their

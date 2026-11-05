@@ -4,10 +4,7 @@ import Foundation
 /// list rows, then again for each accepted row or custom input; its output is
 /// rows plus `\0key\x1fvalue` header lines.
 ///
-/// ponytail: of the headers only prompt, message, data, delim, no-custom and
-/// use-hot-keys are honored. markup-rows, urgent, active, keep-selection,
-/// keep-filter, new-selection, theme and switch-mode are parsed and ignored
-/// (script.c:165-170, 177-182, 186-193).
+/// ponytail: theme is parsed and ignored until #73 (script.c:186-190).
 public final class ScriptMode: Mode {
     public let name: String
     /// The `path` of the spec, split like a shell command line on every run
@@ -19,6 +16,8 @@ public final class ScriptMode: Mode {
     /// The prompt header, which replaces the display name (script.c:161-164).
     public private(set) var displayName: String?
     public private(set) var selectedRowAfterResult: Int?
+    /// The markup-rows header; it persists across runs (script.c:165-166).
+    public private(set) var markupRows = false
     /// Why the last run could not start, worded as rofi's error dialog
     /// (script.c:242-246); nil once a run starts.
     public private(set) var error: String?
@@ -28,24 +27,51 @@ public final class ScriptMode: Mode {
     private var useHotKeys = false
     /// Starts as newline and persists across runs (script.c:334, 171-172).
     private var delimiter: UInt8 = 0x0A
+    /// The urgent and active headers of the current run (script.c:350-358).
+    private var urgentRanges: [RowRange] = []
+    private var activeRanges: [RowRange] = []
+    /// keep-selection, keep-filter and new-selection of the current run
+    /// (script.c:211-213).
+    private var keepSelection = false
+    private var keepFilter = false
+    private var newSelection: Int?
+    /// The enabled modes' names, which switch-mode looks up (rofi.c:161-168).
+    private let modeNames: [String]
+    /// The switch-mode header's mode index (script.c:137-146), dropped after
+    /// the first run (341) and once used (427).
+    private var switchMode: Int?
 
     /// `script_mode_init` runs the script with no argument (script.c:331-341).
-    public init(name: String, command: String) {
+    public init(name: String, command: String, modeNames: [String] = []) {
         self.name = name
         self.command = command
+        self.modeNames = modeNames
         rows = execute(argument: nil, retv: 0, row: nil, input: nil)
+        switchMode = nil
     }
 
     /// `script_token_match` (script.c:515-554): a permanent row always
-    /// matches; a token the text misses is retried on meta.
-    /// ponytail: markup is not stripped first; markup-rows is ignored.
+    /// matches; a token the text misses is retried on meta. Under
+    /// markup-rows the text is the markup's, and invalid markup never matches.
     public func matches(_ row: Row, matcher: Matcher) -> Bool {
-        row.permanent || matcher.matches(row.text, meta: row.meta)
+        guard !row.permanent else { return true }
+        guard let text = markupRows ? stripPangoMarkup(row.text) : row.text else { return false }
+        return matcher.matches(text, meta: row.meta)
+    }
+
+    /// `\0icon` (script.c:100-101): the first entry of the comma list that is
+    /// an absolute path on disk.
+    /// ponytail: theme icon names (`firefox`) are not looked up (#73).
+    public func iconImagePath(at row: Int) -> String? {
+        guard rows.indices.contains(row) else { return nil }
+        return rows[row].icons.first { $0.hasPrefix("/") && FileManager.default.fileExists(atPath: $0) }
     }
 
     /// `script_mode_result` (script.c:370-454).
     public func result(_ action: MenuAction, input: inout String?, selectedRow: Int?) -> ModeResult {
         selectedRowAfterResult = nil
+        // script.c:378-379: the output acted on decides these two.
+        let (keepSelection, keepFilter) = (self.keepSelection, self.keepFilter)
         let row = selectedRow.flatMap { rows.indices.contains($0) ? rows[$0] : nil }
         let newRows: [Row]
         switch action {
@@ -74,13 +100,25 @@ public final class ScriptMode: Mode {
         case .cancel:
             return .exit
         }
+        // script.c:422-428: a known switch-mode drops the rows and the input.
+        if let switchMode {
+            self.switchMode = nil
+            input = nil
+            return .switchTo(switchMode)
+        }
         // script.c:431-452: no rows exits; new rows reload with row 0
-        // selected and the input cleared.
-        // ponytail: keep-selection and keep-filter are not honored.
+        // selected, or under keep-selection new-selection if it is a row,
+        // else the selected one; the input is cleared unless keep-filter.
         guard !newRows.isEmpty else { return .exit }
         rows = newRows
-        selectedRowAfterResult = 0
-        input = nil
+        if !keepSelection {
+            selectedRowAfterResult = 0
+        } else if let newSelection, rows.indices.contains(newSelection) {
+            selectedRowAfterResult = newSelection
+        } else {
+            selectedRowAfterResult = selectedRow ?? 0
+        }
+        if !keepFilter { input = nil }
         return .reload
     }
 
@@ -109,8 +147,12 @@ public final class ScriptMode: Mode {
 
     /// The read loop (script.c:258-308): records end at the current
     /// delimiter, which a delim header changes for the records after it.
+    /// The urgent and active ranges then flag their rows (script.c:495-504).
     private func parse(_ output: [UInt8]) -> [Row] {
         var rows: [Row] = []
+        urgentRanges = []
+        activeRanges = []
+        (keepSelection, keepFilter, newSelection) = (false, false, nil)
         var start = output.startIndex
         while start < output.endIndex {
             let end = output[start...].firstIndex(of: delimiter).map { $0 + 1 } ?? output.endIndex
@@ -122,6 +164,10 @@ public final class ScriptMode: Mode {
             } else {
                 rows.append(Row(parsing: record))
             }
+        }
+        for i in rows.indices {
+            rows[i].urgent = rows[i].urgent || urgentRanges.contains { $0.contains(i, rowCount: rows.count) }
+            rows[i].active = rows[i].active || activeRanges.contains { $0.contains(i, rowCount: rows.count) }
         }
         return rows
     }
@@ -138,10 +184,18 @@ public final class ScriptMode: Mode {
         switch key {
         case "message": message = value.isEmpty ? nil : value
         case "prompt": displayName = value
+        case "markup-rows": markupRows = isTrue
+        case "urgent": urgentRanges += parseRowRanges(value)
+        case "active": activeRanges += parseRowRanges(value)
         case "delim": delimiter = bytes.count == 1 ? bytes[bytes.startIndex] : parseSeparator(value)
         case "no-custom": noCustom = isTrue
         case "use-hot-keys": useHotKeys = isTrue
+        case "keep-selection": keepSelection = isTrue
+        case "keep-filter": keepFilter = isTrue
+        case "new-selection": newSelection = Int(strtoll(value, nil, 0))
         case "data": data = value
+        // ponytail: rofi g_warning()s an unknown mode; it is dropped here.
+        case "switch-mode": switchMode = modeNames.firstIndex(of: value) ?? switchMode
         default: break
         }
     }
@@ -178,7 +232,7 @@ public func makeModes(
         ? applications() : []
     return specs.map { spec in
         switch spec {
-        case .script(let name, let path): ScriptMode(name: name, command: path)
+        case .script(let name, let path): ScriptMode(name: name, command: path, modeNames: specs.map(\.name))
         case .drun(let historyPath):
             DrunMode(
                 applications: applicationRecords,

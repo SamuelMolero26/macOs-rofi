@@ -3,11 +3,46 @@ import Darwin
 import RofiCore
 import Testing
 
+/// Empty files in `relative` under a fresh temporary directory, removed when
+/// the instance goes away.
+private final class ConfigFixture {
+    let root: String
+    let directory: String
+    private let made: [String]
+
+    init(_ relative: String, files: [String]) {
+        let base = getenv("TMPDIR").map { String(cString: $0) } ?? "/tmp/"
+        var template = Array(((base.hasSuffix("/") ? base : base + "/") + "rofi-config-XXXXXX").utf8CString)
+        root = template.withUnsafeMutableBufferPointer { String(cString: mkdtemp($0.baseAddress!)) }
+        var current = root
+        var made: [String] = []
+        for component in relative.split(separator: "/") {
+            current += "/" + component
+            mkdir(current, 0o755)
+            made.append(current)
+        }
+        for file in files {
+            fclose(fopen(current + "/" + file, "w"))
+            made.append(current + "/" + file)
+        }
+        directory = current
+        self.made = made
+    }
+
+    deinit {
+        for path in made.reversed() { remove(path) }
+        rmdir(root)
+    }
+}
+
 // Contract: mode list setup in rofi source/rofi.c:795-857, `-show` dispatch in
 // source/rofi.c:935-958 and script specs in source/modes/script.c:675-732.
 @Suite struct ShowOptionsTests {
-    private func parse(_ argv: [String]) throws -> ShowOptions {
-        try ShowOptions(arguments: Arguments(["rofi"] + argv))
+    /// No user scripts unless a test gives its own environment.
+    private func parse(_ argv: [String], environment: [String: String] = ["HOME": "/nonexistent"]) throws
+        -> ShowOptions
+    {
+        try ShowOptions(arguments: Arguments(["rofi"] + argv), environment: environment)
     }
 
     private func errors(_ argv: [String]) -> [String] {
@@ -79,6 +114,38 @@ import Testing
         // joins as `a` + HOME + `/b`.
         let want = expected.split(separator: "HOME", omittingEmptySubsequences: false).joined(separator: home)
         #expect(options.modes == [.script(name: "a", path: want)])
+    }
+
+    // source/modes/script.c:636-665, 675-693, 727-731: a bare name runs the
+    // user script with that name less its last extension; `name:path` still
+    // works, and the built-ins come first (source/rofi.c:795-799).
+    @Test func bareNameRunsAUserScript_script_c_677() throws {
+        let config = ConfigFixture("rofi/scripts", files: ["foo", "bar.sh", "x.tar.gz", "drun"])
+        let environment = ["HOME": "/nonexistent", "XDG_CONFIG_HOME": config.root]
+        let options = try parse(["-modes", "foo,bar,x.tar,drun,b:./s", "-show", "foo"], environment: environment)
+        #expect(
+            options.modes == [
+                .script(name: "foo", path: config.directory + "/foo"),
+                .script(name: "bar", path: config.directory + "/bar.sh"),
+                .script(name: "x.tar", path: config.directory + "/x.tar.gz"),
+                .drun(historyPath: defaultHistory),
+                .script(name: "b", path: "./s"),
+            ])
+        #expect(options.startIndex == 0)
+        #expect(throws: InvalidModeConfiguration.self) { try parse(["-modes", "bar.sh"], environment: environment) }
+    }
+
+    // g_get_user_config_dir: `$XDG_CONFIG_HOME`, else (unset or empty)
+    // `$HOME/.config`.
+    @Test func userScriptsLiveInTheHomeConfigWithoutXdgConfigHome() throws {
+        let home = ConfigFixture(".config/rofi/scripts", files: ["foo"])
+        let want: [ModeSpec] = [.script(name: "foo", path: home.directory + "/foo")]
+        #expect(try parse(["-modes", "foo"], environment: ["HOME": home.root]).modes == want)
+        #expect(
+            try parse(["-modes", "foo"], environment: ["HOME": home.root, "XDG_CONFIG_HOME": ""]).modes == want)
+        #expect(throws: InvalidModeConfiguration.self) {
+            try parse(["-modes", "foo"], environment: ["HOME": home.root, "XDG_CONFIG_HOME": "/nonexistent"])
+        }
     }
 
     // source/rofi.c:547-562, 832-835: a name with no built-in or script spec

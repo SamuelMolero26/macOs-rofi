@@ -21,9 +21,12 @@ public enum ModeSpec: Equatable, Sendable {
     }
 
     /// `script_mode_is_valid` and `script_mode_parse_setup`
-    /// (source/modes/script.c:675-732).
-    /// ponytail: no ~/.config/rofi/scripts lookup for bare names.
-    init?(scriptSpec token: String) {
+    /// (source/modes/script.c:675-732): a user script's name, else `name:path`.
+    init?(scriptSpec token: String, userScripts: [String: String]) {
+        if let path = userScripts[token] {
+            self = .script(name: token, path: path)
+            return
+        }
         guard let colon = token.firstIndex(of: ":") else { return nil }
         self = .script(name: String(token[..<colon]), path: expandPath(String(token[token.index(after: colon)...])))
     }
@@ -80,7 +83,8 @@ public struct ShowOptions: Sendable {
     /// each script spec as it is first resolved (source/rofi.c:795-807).
     public var availableModes: [ModeSpec] = []
 
-    public init(arguments args: Arguments) throws {
+    /// `environment` locates the user scripts directory.
+    public init(arguments args: Arguments, environment: [String: String] = ProcessInfo.processInfo.environment) throws {
         // xrmoptions.c:75-86 parses switchers, modi, then modes; the last one
         // present wins.
         // Upstream defaults to `window,drun,run,ssh` (`drun,run,ssh` on
@@ -100,9 +104,11 @@ public struct ShowOptions: Sendable {
                 directory: args.string("-filebrowser-directory"),
                 showHidden: args.bool("filebrowser-show-hidden", default: false)),
         ]
+        // Gathered once before the mode list is built (source/rofi.c:756).
+        let scripts = userScripts(environment)
         func resolve(_ token: String) -> ModeSpec? {
             if let spec = known.first(where: { $0.name == token }) { return spec }
-            guard let spec = ModeSpec(scriptSpec: token) else { return nil }
+            guard let spec = ModeSpec(scriptSpec: token, userScripts: scripts) else { return nil }
             if !known.contains(where: { $0.name == spec.name }) { known.append(spec) }
             return spec
         }
@@ -201,6 +207,19 @@ private func drunHistoryPath(_ args: Arguments) -> String {
         ?? environment["XDG_CACHE_HOME"].flatMap { $0.isEmpty ? nil : $0 }
         ?? (environment["HOME"] ?? NSHomeDirectory()) + "/.cache"
     return directory + "/rofi3.druncache"
+}
+
+/// `script_mode_gather_user_scripts` (source/modes/script.c:636-665): each
+/// file in g_get_user_config_dir's `rofi/scripts`, `$XDG_CONFIG_HOME` or
+/// `~/.config`, named without its last extension; the first of a name wins.
+private func userScripts(_ environment: [String: String]) -> [String: String] {
+    let directory =
+        (environment["XDG_CONFIG_HOME"].flatMap { $0.isEmpty ? nil : $0 }
+            ?? (environment["HOME"] ?? NSHomeDirectory()) + "/.config") + "/rofi/scripts"
+    let files = (try? FileManager.default.contentsOfDirectory(atPath: directory)) ?? []
+    return Dictionary(
+        files.map { (String($0[..<($0.lastIndex(of: ".") ?? $0.endIndex)]), directory + "/" + $0) },
+        uniquingKeysWith: { first, _ in first })
 }
 
 /// `rofi_expand_path` (source/helper.c:784-813): `~` and `~user` expand in any

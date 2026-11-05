@@ -47,6 +47,8 @@ struct PanelStyle {
     func state(of match: DmenuMatch) -> DmenuRowState
     /// The file whose Finder icon the row shows, or nil for none.
     func iconPath(for match: DmenuMatch) -> String?
+    /// The image file the row shows as itself; it beats `iconPath`.
+    func iconImagePath(for match: DmenuMatch) -> String?
 
     func updateQuery(_ query: String) -> PanelUpdate
     /// Rows streamed in after the panel opened; only dmenu streams.
@@ -97,6 +99,7 @@ struct PanelStyle {
     func displayText(for match: DmenuMatch) -> String { session.displayText(for: match) }
     func state(of match: DmenuMatch) -> DmenuRowState { session.state(of: match) }
     func iconPath(for match: DmenuMatch) -> String? { nil }
+    func iconImagePath(for match: DmenuMatch) -> String? { nil }
 
     func updateQuery(_ query: String) -> PanelUpdate {
         complete(session.updateQuery(query)) ?? .reload

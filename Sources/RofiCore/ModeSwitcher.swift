@@ -152,9 +152,10 @@ public struct ModeSwitcher {
             switchTo(index)
         }
         if let requestedRow {
-            // ponytail: upstream searches the matches from before the reload,
-            // then clamps. Unsorted, source row 0 (the only row script mode
-            // requests so far) lands on the first visible row either way.
+            // view.c:369-382: the requested source row's visible position,
+            // else the first. ponytail: upstream searches the matches from
+            // before the reload; they differ only under keep-filter when the
+            // new rows reorder.
             selectedVisibleIndex = matches.isEmpty ? nil : matches.firstIndex { $0.sourceIndex == requestedRow } ?? 0
         }
         return isOpen
