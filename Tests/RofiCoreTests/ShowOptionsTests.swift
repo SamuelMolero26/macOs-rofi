@@ -234,9 +234,9 @@ import Testing
         #expect(try !parse(["-no-sidebar-mode"]).sidebarMode)
     }
 
-    // config/config.c:47, source/xrmoptions.c:145.
-    @Test func showIconsIsABooleanOffByDefault_xrmoptions_c_145() throws {
-        #expect(try !parse([]).showIcons)
+    // source/xrmoptions.c:145; on by default, unlike config/config.c:47.
+    @Test func showIconsIsABooleanOnByDefault_xrmoptions_c_145() throws {
+        #expect(try parse([]).showIcons)
         #expect(try parse(["-show-icons"]).showIcons)
         #expect(try !parse(["-no-show-icons"]).showIcons)
     }

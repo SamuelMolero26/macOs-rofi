@@ -66,8 +66,10 @@ public struct ShowOptions: Sendable {
     public var startIndex: Int?
     /// `-sidebar-mode` (source/xrmoptions.c:388-395, config/config.c:119).
     public var sidebarMode = false
-    /// `-show-icons` (source/xrmoptions.c:145, config/config.c:47).
-    public var showIcons = false
+    /// `-show-icons` (source/xrmoptions.c:145). Upstream defaults it off
+    /// (config/config.c:47); a macOS launcher shows icons unless
+    /// `-no-show-icons` is given.
+    public var showIcons = true
     /// Printed on stderr only when stdout is a terminal (source/rofi.c:533-545).
     public var warnings: [String] = []
     public var match = MatchOptions()
