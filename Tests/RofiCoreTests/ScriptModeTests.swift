@@ -359,7 +359,7 @@ private let reportRun = """
         #expect(loadCount == 0)
 
         let defaults = try ShowOptions(arguments: Arguments(["rofi", "-show", "drun"]))
-        #expect(defaults.modes.map(\.name) == ["drun"])
+        #expect(defaults.modes.map(\.name) == ["drun", "filebrowser"])
         #expect(defaults.startIndex == 0)
     }
 

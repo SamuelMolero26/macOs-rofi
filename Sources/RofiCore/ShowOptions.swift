@@ -79,8 +79,10 @@ public struct ShowOptions: Sendable {
         // xrmoptions.c:75-86 parses switchers, modi, then modes; the last one
         // present wins.
         // Upstream defaults to `window,drun,run,ssh` (`drun,run,ssh` on
-        // Wayland, config/config.c:36-42); of those only drun exists here.
-        let list = args.string("-modes") ?? args.string("-modi") ?? args.string("-switchers") ?? "drun"
+        // Wayland, config/config.c:36-42); of those only drun exists here, so
+        // the default enables both built-ins instead.
+        let list =
+            args.string("-modes") ?? args.string("-modi") ?? args.string("-switchers") ?? "drun,filebrowser"
         // Each name resolves to the first available mode with it, built-ins
         // in upstream's order (source/rofi.c:732-740).
         // ponytail: only `drun` and `filebrowser` are built in; window, run,
