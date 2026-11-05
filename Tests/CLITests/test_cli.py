@@ -272,6 +272,36 @@ class CLIContractTests(unittest.TestCase):
         )
         self.assertEqual(result.stderr, b"")
 
+    # ADR 0001 §2: -dump-config resolves the same sources as a real run, and
+    # its warnings, including panel-style ones, still go to stderr.
+    def test_dump_config_reports_style_warnings(self):
+        with tempfile.TemporaryDirectory() as home:
+            environment = os.environ.copy()
+            environment["HOME"] = home
+            environment["XDG_CONFIG_HOME"] = str(Path(home) / "config")
+            result = subprocess.run(
+                [
+                    "rofi",
+                    "-dump-config",
+                    "-theme-str",
+                    'window { font: "No Such Family Anywhere 12"; }',
+                ],
+                executable=ROFI,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=environment,
+                check=False,
+            )
+
+        self.assertEqual(result.returncode, 0)
+        self.assertIn(b"window {", result.stdout)
+        self.assertEqual(
+            result.stderr,
+            b"rofi: warning: <theme-str:1>:1:10: font 'No Such Family Anywhere 12' "
+            b"is not available; the built-in font is kept\n",
+        )
+
     # ADR 0001 §3-4: the panel style is built before dmenu runs, and a theme
     # value with no native effect warns instead of failing.
     def test_unavailable_theme_font_warns_and_dmenu_still_runs(self):

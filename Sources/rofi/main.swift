@@ -104,14 +104,15 @@ func reportWarnings(_ warnings: [RasiDiagnostic]) {
 }
 
 reportWarnings(configuration.warnings)
+// One style for both panels (ADR 0001 §3). Built before -dump-config so its
+// warnings reach stderr there too (ADR 0001 §2).
+let (style, styleWarnings) = PanelStyle.theme(configuration.resolution)
+reportWarnings(styleWarnings)
+
 if args.has("-dump-config") {
     FileHandle.standardOutput.write(Data(configuration.canonicalRasi.utf8))
     exit(EXIT_SUCCESS)
 }
-
-// One style for both panels (ADR 0001 §3).
-let (style, styleWarnings) = PanelStyle.theme(configuration.resolution)
-reportWarnings(styleWarnings)
 
 // source/rofi.c:1043-1057.
 let invokedAsDmenu = args.argv.first?.split(separator: "/").last == "dmenu"
