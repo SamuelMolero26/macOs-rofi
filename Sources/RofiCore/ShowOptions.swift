@@ -66,8 +66,10 @@ public struct ShowOptions: Sendable {
     public var startIndex: Int?
     /// `-sidebar-mode` (source/xrmoptions.c:388-395, config/config.c:119).
     public var sidebarMode = false
-    /// `-show-icons` (source/xrmoptions.c:145, config/config.c:47).
-    public var showIcons = false
+    /// `-show-icons` (source/xrmoptions.c:145). Upstream defaults it off
+    /// (config/config.c:47); a macOS launcher shows icons unless
+    /// `-no-show-icons` is given.
+    public var showIcons = true
     /// Printed on stderr only when stdout is a terminal (source/rofi.c:533-545).
     public var warnings: [String] = []
     public var match = MatchOptions()
@@ -79,8 +81,10 @@ public struct ShowOptions: Sendable {
         // xrmoptions.c:75-86 parses switchers, modi, then modes; the last one
         // present wins.
         // Upstream defaults to `window,drun,run,ssh` (`drun,run,ssh` on
-        // Wayland, config/config.c:36-42); of those only drun exists here.
-        let list = args.string("-modes") ?? args.string("-modi") ?? args.string("-switchers") ?? "drun"
+        // Wayland, config/config.c:36-42); of those only drun exists here, so
+        // the default enables both built-ins instead.
+        let list =
+            args.string("-modes") ?? args.string("-modi") ?? args.string("-switchers") ?? "drun,filebrowser"
         // Each name resolves to the first available mode with it, built-ins
         // in upstream's order (source/rofi.c:732-740).
         // ponytail: only `drun` and `filebrowser` are built in; window, run,

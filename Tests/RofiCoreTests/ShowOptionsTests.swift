@@ -154,10 +154,13 @@ import Testing
         #expect(five.description.hasSuffix("E2\n\nThere are 2 more errors."))
     }
 
-    // config/config.c:36-42: upstream's default `window,drun,run,ssh`
-    // (Wayland `drun,run,ssh`) filtered to implemented modes is `drun`.
-    @Test func defaultModeListIsDrun_config_c_36() throws {
-        #expect(try parse([]).modes == [.drun(historyPath: defaultHistory)])
+    // config/config.c:36-42: upstream's default `window,drun,run,ssh` has
+    // only drun implemented here, so both built-ins are enabled instead.
+    @Test func defaultModeListIsDrunAndFilebrowser_config_c_36() throws {
+        #expect(
+            try parse([]).modes == [
+                .drun(historyPath: defaultHistory), .fileBrowser(directory: nil, showHidden: false),
+            ])
     }
 
     // source/rofi.c:935-937, 161-168: `-show` picks the first mode with that
@@ -231,9 +234,9 @@ import Testing
         #expect(try !parse(["-no-sidebar-mode"]).sidebarMode)
     }
 
-    // config/config.c:47, source/xrmoptions.c:145.
-    @Test func showIconsIsABooleanOffByDefault_xrmoptions_c_145() throws {
-        #expect(try !parse([]).showIcons)
+    // source/xrmoptions.c:145; on by default, unlike config/config.c:47.
+    @Test func showIconsIsABooleanOnByDefault_xrmoptions_c_145() throws {
+        #expect(try parse([]).showIcons)
         #expect(try parse(["-show-icons"]).showIcons)
         #expect(try !parse(["-no-show-icons"]).showIcons)
     }
@@ -253,9 +256,9 @@ import Testing
     }
 
     // source/modes/filebrowser.c:729: `filebrowser` is a built-in mode name,
-    // so `-show` enables it with the usual warning.
+    // so `-show` enables an unlisted one with the usual warning.
     @Test func showResolvesTheFilebrowserBuiltin_filebrowser_c_729() throws {
-        let options = try parse(["-show", "filebrowser"])
+        let options = try parse(["-modes", "drun", "-show", "filebrowser"])
         #expect(options.modes.last == .fileBrowser(directory: nil, showHidden: false))
         #expect(options.modes.map(\.name) == ["drun", "filebrowser"])
         #expect(options.startIndex == 1)
@@ -313,8 +316,8 @@ import Testing
     // filebrowser; listed by default it starts with no warning.
     @Test func showResolvesTheDrunBuiltin_rofi_c_735() throws {
         let options = try parse(["-show", "drun"])
-        #expect(options.modes == [.drun(historyPath: defaultHistory)])
-        #expect(options.modes.map(\.name) == ["drun"])
+        #expect(options.modes.first == .drun(historyPath: defaultHistory))
+        #expect(options.modes.map(\.name) == ["drun", "filebrowser"])
         #expect(options.startIndex == 0)
         #expect(options.warnings.isEmpty)
         #expect(options.availableModes.map(\.name) == ["drun", "filebrowser"])
