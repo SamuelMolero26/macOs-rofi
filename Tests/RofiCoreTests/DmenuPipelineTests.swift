@@ -277,4 +277,13 @@ import Testing
 
         #expect(multi.dump(rows: fruit) == plain.dump(rows: fruit))
     }
+
+    // source/keyb.c:416-423, 450-491: `-kb-*` options apply to dmenu too, and
+    // a bad one is a startup error (source/rofi.c:1271, 882-885).
+    @Test func bindingOptionsReachTheKeymap() throws {
+        let rebound = try pipeline(["-kb-accept-custom", "Alt+Return"])
+
+        #expect(rebound.keymap.action(for: KeyChord(key: "\r", modifiers: .option)) == .acceptCustom)
+        #expect(throws: InvalidModeConfiguration.self) { try pipeline(["-kb-accept-alt", "Shift+Nope"]) }
+    }
 }

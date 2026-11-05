@@ -154,6 +154,36 @@ public struct DmenuSession: Sendable {
         return nil
     }
 
+    /// A keymap action, with the return value source/view.c:1148-1199,
+    /// 1280-1306 sets for it, finalized as dmenu does
+    /// (source/modes/dmenu.c:839-965). Nil keeps the session open.
+    public mutating func perform(_ action: KeyAction) -> DmenuCompletion? {
+        switch action {
+        case .acceptAlt:
+            return acceptAlternate()
+        // MENU_CUSTOM_INPUT, also with MENU_CUSTOM_ACTION, prints the input
+        // over any highlighted row (source/modes/dmenu.c:951-955); without
+        // custom input there is no row to print, so it restarts (847-899).
+        case .acceptCustom, .acceptCustomAlt:
+            guard pipeline.allowsCustomInput else { return nil }
+            return completion(for: nil)
+        // MENU_CUSTOM_COMMAND: only -no-custom/-only-match need a selectable
+        // row (source/modes/dmenu.c:880-892, 957-961).
+        case .customKey(let n):
+            if !pipeline.allowsCustomInput {
+                guard let match = highlightedMatch, !match.row.nonselectable else { return nil }
+            }
+            return completion(for: highlightedMatch, outcome: .customKey(n))
+        // MENU_ENTRY_DELETE, only sent with a visible row (view.c:1148-1155),
+        // matches no branch: -no-custom/-only-match restart, normal mode
+        // finishes with FALSE, exit 1 and no output
+        // (source/modes/dmenu.c:893-899, 962-965, 796-797).
+        case .deleteEntry:
+            guard highlightedMatch != nil, pipeline.allowsCustomInput else { return nil }
+            return DmenuCompletion(output: nil, outcome: .cancelled)
+        }
+    }
+
     /// `-only-match` restarts the dialog instead of closing it; nil tells the
     /// UI to keep this session open (source/modes/dmenu.c:880-891).
     public func cancel() -> DmenuCompletion? {
@@ -177,7 +207,7 @@ public struct DmenuSession: Sendable {
     /// `dmenu_print_results`: every toggled row in input order, else the
     /// highlighted row, else the query as custom input
     /// (source/modes/dmenu.c:808-826).
-    private func completion(for match: DmenuMatch?) -> DmenuCompletion {
+    private func completion(for match: DmenuMatch?, outcome: DmenuOutcome = .accepted) -> DmenuCompletion {
         let output: String
         if !toggledRows.isEmpty {
             output = toggledRows.sorted().map { index in
@@ -188,7 +218,7 @@ public struct DmenuSession: Sendable {
         } else {
             output = pipeline.formattedCustomOutput(for: query)
         }
-        return DmenuCompletion(output: output, outcome: .accepted)
+        return DmenuCompletion(output: output, outcome: outcome)
     }
 }
 

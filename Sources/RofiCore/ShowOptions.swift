@@ -29,8 +29,9 @@ public enum ModeSpec: Equatable, Sendable {
     }
 }
 
-/// The mode list failed to set up. rofi collects one message per bad mode and
-/// shows them in its startup error dialog (source/rofi.c:546-562, 840-857).
+/// Startup failed: the mode list or a key binding. rofi collects one message
+/// per bad mode or binding and shows them in its startup error dialog
+/// (source/rofi.c:546-562, 840-857, source/keyb.c:450-491).
 public struct InvalidModeConfiguration: Error, Equatable, CustomStringConvertible {
     public let errors: [String]
 
@@ -73,6 +74,8 @@ public struct ShowOptions: Sendable {
     /// Printed on stderr only when stdout is a terminal (source/rofi.c:533-545).
     public var warnings: [String] = []
     public var match = MatchOptions()
+    /// Upstream's key bindings with the `-kb-*` options applied.
+    public var keymap = Keymap()
     /// rofi's available modes: the built-ins (source/rofi.c:718-739), then
     /// each script spec as it is first resolved (source/rofi.c:795-807).
     public var availableModes: [ModeSpec] = []
@@ -119,6 +122,12 @@ public struct ShowOptions: Sendable {
             } else {
                 errors.append(notFound(token))
             }
+        }
+        // parse_keys_abe's errors follow (source/rofi.c:1271).
+        do {
+            keymap = try Keymap(arguments: args)
+        } catch let error as InvalidModeConfiguration {
+            errors += error.errors
         }
         // config_sanity_check adds its error after setup_modes' (source/rofi.c:
         // 1243-1250, 869-875); together they are shown before `-show` is read

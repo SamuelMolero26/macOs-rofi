@@ -79,6 +79,8 @@ public struct DmenuPipeline: Sendable {
     public var password = false
     /// Where long rows are cut (source/widgets/listview.c:804).
     public var ellipsizeMode = EllipsizeMode.end
+    /// Upstream's key bindings with the `-kb-*` options applied.
+    public var keymap = Keymap()
 
     /// The window title around `prompt` (source/view.c:1892-1894).
     public var windowTitle: String { "rofi - \(prompt)" }
@@ -104,6 +106,9 @@ public struct DmenuPipeline: Sendable {
         // dmenu forces case sensitivity on unless `-i`, whatever
         // `-case-sensitive` said (source/modes/dmenu.c:605-608).
         match.caseSensitive = !args.has("-i")
+        // ponytail: upstream shows binding and matching errors in one dialog
+        // (source/rofi.c:1271, 882-885); here the matching error alone wins.
+        keymap = try Keymap(arguments: args)
         autoSelect = args.bool("auto-select", default: autoSelect)
         onlyMatch = args.has("-only-match")
         noCustom = args.has("-no-custom")

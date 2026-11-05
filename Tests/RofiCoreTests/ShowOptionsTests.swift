@@ -116,6 +116,26 @@ import Testing
         #expect(try parse(["-matching", "fuzzy"]).match.method == .fuzzy)
     }
 
+    // source/rofi.c:1243-1250, 1271, 869-888: parse_keys_abe's errors come
+    // between setup_modes' and config_sanity_check's.
+    @Test func bindingErrorsSitBetweenModeAndMatchingErrors_rofi_c_1271() throws {
+        let matching = try #require(errors(["-matching", "bogus"]).first)
+        let binding = try #require(errors(["-kb-custom-2", "Alt+bogus"]).first)
+        #expect(binding.hasPrefix("Failed to set binding Alt+bogus for: Custom keybinding 2 (kb-custom-2)"))
+        #expect(
+            errors(["-modes", "run", "-matching", "bogus", "-kb-custom-2", "Alt+bogus"]) == [
+                "Mode run is not found.\nThe following modes are known:\n        * drun\n        * filebrowser\n",
+                binding,
+                matching,
+            ])
+    }
+
+    @Test func bindingOptionsReachTheKeymap() throws {
+        let options = try parse(["-kb-custom-1", "Control+1"])
+
+        #expect(options.keymap.action(for: KeyChord(key: "1", modifiers: .control)) == .customKey(1))
+    }
+
     // source/rofi.c:564-595: with no `-show` rofi says so, lists the enabled
     // modes, then the built-ins that are not enabled. Its markup is rendered
     // away.

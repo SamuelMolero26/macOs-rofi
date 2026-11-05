@@ -10,7 +10,7 @@ import os
     streaming input: (open: @Sendable () -> Int32, separator: UInt8)?
 ) -> DmenuCompletion {
     let model = DmenuPanelModel(session: session)
-    runPanel(model: model, style: model.style, streaming: input)
+    runPanel(model: model, style: model.style, keymap: session.pipeline.keymap, streaming: input)
     guard let completion = model.completion else {
         preconditionFailure("dmenu panel stopped without a completion")
     }
@@ -21,13 +21,14 @@ import os
 @MainActor func runPanel(
     model: any PanelModel,
     style: PanelStyle,
+    keymap: Keymap,
     streaming input: (open: @Sendable () -> Int32, separator: UInt8)?
 ) {
     let application = NSApplication.shared
     // Regular policy reliably registers this unbundled CLI for activation.
     application.setActivationPolicy(.regular)
 
-    let controller = PanelController(model: model, style: style, input: input)
+    let controller = PanelController(model: model, style: style, keymap: keymap, input: input)
     let applicationDelegate = PanelApplicationDelegate(controller: controller)
     application.delegate = applicationDelegate
     withExtendedLifetime(applicationDelegate) {
@@ -84,6 +85,7 @@ import os
 
     private let model: any PanelModel
     private let style: PanelStyle
+    private let keymap: Keymap
     private let input: (open: @Sendable () -> Int32, separator: UInt8)?
     private let pendingInput = OSAllocatedUnfairLock(initialState: PendingInput())
     private let panel: DmenuPanel
@@ -114,13 +116,19 @@ import os
     )
     private var suppressTableSelectionChanges = false
     private var finished = false
+    /// The keymap's local key-down monitor while the panel is open.
+    private var keyMonitor: Any?
     /// Finder icons by path, fetched as rows are first shown.
     /// ponytail: never evicted; one image per path shown in this run.
     private var icons: [String: NSImage] = [:]
 
-    init(model: any PanelModel, style: PanelStyle, input: (open: @Sendable () -> Int32, separator: UInt8)?) {
+    init(
+        model: any PanelModel, style: PanelStyle, keymap: Keymap,
+        input: (open: @Sendable () -> Int32, separator: UInt8)?
+    ) {
         self.model = model
         self.style = style
+        self.keymap = keymap
         self.input = input
         searchField = style.password ? NSSecureTextField() : NSSearchField()
         switcherControl = style.switcherLabels.map {
@@ -158,6 +166,22 @@ import os
             panel.setFrameOrigin(origin)
         }
         panel.orderFrontRegardless()
+        installKeyMonitor()
+    }
+
+    /// Bound key-downs run their action before the window or the field
+    /// editor sees them: the field editor would type Alt+1 as "¡", and AppKit
+    /// swallows Control+Return before `NSWindow.sendEvent` (observed on
+    /// macOS 15), while a local monitor still gets it.
+    private func installKeyMonitor() {
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [unowned self] event in
+            let consumed = MainActor.assumeIsolated {
+                guard let action = keymapAction(for: event, in: panel, keymap: keymap) else { return false }
+                perform { $0.perform(action) }
+                return true
+            }
+            return consumed ? nil : event
+        }
     }
 
     func startStreaming() {
@@ -450,6 +474,8 @@ import os
             return
         case .close:
             finished = true
+            keyMonitor.map(NSEvent.removeMonitor)
+            keyMonitor = nil
             panel.orderOut(nil)
             NSApplication.shared.stop(nil)
         case .reload:
@@ -497,16 +523,9 @@ extension PanelController: NSTextFieldDelegate {
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
         guard !textView.hasMarkedText() else { return false }
         switch commandSelector {
+        // Shift+Return, kb-accept-alt, is taken by the keymap before it gets here.
         case #selector(NSResponder.insertNewline(_:)):
-            // Shift+Return has no binding of its own in the standard key
-            // bindings, so it arrives here; it is upstream's kb-accept-alt
-            // (source/keyb.c:127-130).
-            let modifiers = NSApp.currentEvent?.modifierFlags.intersection([.shift, .control, .option, .command])
-            if modifiers == .shift {
-                perform { $0.acceptAlternate() }
-            } else {
-                perform { $0.accept() }
-            }
+            perform { $0.accept() }
         case #selector(NSResponder.cancelOperation(_:)):
             perform { $0.cancel() }
         case #selector(NSResponder.moveUp(_:)):
@@ -621,6 +640,45 @@ extension PanelController: NSWindowDelegate {
 private final class DmenuPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+}
+
+/// The keymap action a key-down in `panel` triggers, or nil to pass the event
+/// on: another window's event, an unbound chord, or a key during an IME
+/// composition.
+@MainActor func keymapAction(for event: NSEvent, in panel: NSWindow, keymap: Keymap) -> KeyAction? {
+    guard event.window === panel else { return nil }
+    if let editor = panel.firstResponder as? NSTextView, editor.hasMarkedText() { return nil }
+    return keymap.action(for: event)
+}
+
+extension KeyChord {
+    /// The chord of a key-down: its key plus Control, Shift, Option and
+    /// Command. `charactersIgnoringModifiers` may or may not fold Shift into
+    /// a symbol (real Alt+Shift+1 reports "1"), so a printable non-letter key
+    /// takes Shift explicitly ("!", upstream's `exclam`). Letters, control
+    /// characters and function keys (U+F700-U+F8FF; Shift+forward delete
+    /// would turn into U+007F) keep `charactersIgnoringModifiers`.
+    init?(event: NSEvent) {
+        guard event.type == .keyDown, var key = event.charactersIgnoringModifiers, !key.isEmpty else { return nil }
+        let flags = event.modifierFlags
+        if flags.contains(.shift), let char = key.first, key.count == 1, !char.isLetter,
+            char.unicodeScalars.allSatisfy({ ![.control, .privateUse].contains($0.properties.generalCategory) })
+        {
+            key = event.characters(byApplyingModifiers: .shift) ?? key
+        }
+        var modifiers: KeyModifiers = []
+        if flags.contains(.control) { modifiers.insert(.control) }
+        if flags.contains(.shift) { modifiers.insert(.shift) }
+        if flags.contains(.option) { modifiers.insert(.option) }
+        if flags.contains(.command) { modifiers.insert(.command) }
+        self.init(key: key, modifiers: modifiers)
+    }
+}
+
+extension Keymap {
+    func action(for event: NSEvent) -> KeyAction? {
+        KeyChord(event: event).flatMap(action(for:))
+    }
 }
 
 /// Draws a row's -a/-u color, except on the emphasized cursor row, where the

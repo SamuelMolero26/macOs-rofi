@@ -80,7 +80,7 @@ func reportFailedModes(_ modes: [any Mode]) -> Bool {
     // place of the view (source/rofi.c:201-216, source/modes/script.c:242-246).
     if reportFailedModes(modes) { exit(EXIT_SUCCESS) }
     let switcher = ModeSwitcher(modes: modes, displayNames: options.displayNames, start: start, match: options.match)
-    runModePanel(switcher: switcher, sidebar: options.sidebarMode, icons: options.showIcons)
+    runModePanel(switcher: switcher, sidebar: options.sidebarMode, icons: options.showIcons, keymap: options.keymap)
     // A later run that cannot start ends its mode with no rows; its dialog
     // would show after the view closes.
     _ = reportFailedModes(modes)
@@ -97,7 +97,10 @@ let pipeline: DmenuPipeline
 do {
     pipeline = try DmenuPipeline(arguments: args)
 } catch {
-    fail("\(error)", status: (error as? InvalidMatchingConfiguration)?.exitStatus ?? EXIT_FAILURE)
+    fail(
+        "\(error)",
+        status: (error as? InvalidMatchingConfiguration)?.exitStatus ?? (error as? InvalidModeConfiguration)?.exitStatus
+            ?? EXIT_FAILURE)
 }
 
 // `-dump` reads synchronously here; async input is opened on the reader thread,
