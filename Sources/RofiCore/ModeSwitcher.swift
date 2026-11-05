@@ -95,6 +95,29 @@ public struct ModeSwitcher {
         perform(.cancel)
     }
 
+    /// A keymap action as the return value source/view.c:1148-1199,
+    /// 1280-1306 sets for it. False once closed.
+    @discardableResult
+    public mutating func perform(key action: KeyAction) -> Bool {
+        switch action {
+        // MENU_OK | MENU_CUSTOM_ACTION; ponytail: MenuAction has no
+        // custom-action flag, so it accepts like Return.
+        case .acceptAlt:
+            return accept()
+        // MENU_CUSTOM_INPUT (| MENU_CUSTOM_ACTION for the alt), no row;
+        // the custom-action flag is dropped as above.
+        case .acceptCustom, .acceptCustomAlt:
+            return perform(.customInput)
+        // MENU_CUSTOM_COMMAND carries `action - CUSTOM_1` (view.c:1199).
+        case .customKey(let n):
+            return perform(.customKey(n - 1))
+        // Ignored without a visible row (view.c:1148-1155).
+        case .deleteEntry:
+            guard highlightedSourceIndex != nil else { return isOpen }
+            return perform(.deleteEntry)
+        }
+    }
+
     /// Hands `action` to the current mode and applies its result
     /// (source/rofi.c:235-291). Custom input and cancel carry no row
     /// (source/view.c:1296-1301). Returns false once the switcher is closed.

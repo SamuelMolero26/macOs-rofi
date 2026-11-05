@@ -7,7 +7,7 @@ import RofiCore
     let model = ModePanelModel(switcher: switcher)
     var style = model.style(sidebar: sidebar)
     style.showIcons = icons
-    runPanel(model: model, style: style, streaming: nil)
+    runPanel(model: model, style: style, keymap: Keymap(), streaming: nil)
 }
 
 /// A `-show` mode switcher (source/rofi.c:201-291), which ends when a mode
@@ -60,8 +60,7 @@ import RofiCore
     func moveSelection(by offset: Int) { switcher.moveSelection(by: offset) }
 
     func accept() -> PanelUpdate { switcher.accept() ? .reload : .close }
-    // ponytail: kb-accept-alt is not bound for modes yet.
-    func acceptAlternate() -> PanelUpdate { accept() }
+    func perform(_ action: KeyAction) -> PanelUpdate { switcher.perform(key: action) ? .reload : .close }
     func cancel() -> PanelUpdate { switcher.cancel() ? .reload : .close }
 
     func switchMode(by offset: Int) -> PanelUpdate {

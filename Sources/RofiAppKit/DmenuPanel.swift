@@ -10,7 +10,7 @@ import os
     streaming input: (open: @Sendable () -> Int32, separator: UInt8)?
 ) -> DmenuCompletion {
     let model = DmenuPanelModel(session: session)
-    runPanel(model: model, style: model.style, streaming: input)
+    runPanel(model: model, style: model.style, keymap: Keymap(), streaming: input)
     guard let completion = model.completion else {
         preconditionFailure("dmenu panel stopped without a completion")
     }
@@ -21,13 +21,14 @@ import os
 @MainActor func runPanel(
     model: any PanelModel,
     style: PanelStyle,
+    keymap: Keymap,
     streaming input: (open: @Sendable () -> Int32, separator: UInt8)?
 ) {
     let application = NSApplication.shared
     // Regular policy reliably registers this unbundled CLI for activation.
     application.setActivationPolicy(.regular)
 
-    let controller = PanelController(model: model, style: style, input: input)
+    let controller = PanelController(model: model, style: style, keymap: keymap, input: input)
     let applicationDelegate = PanelApplicationDelegate(controller: controller)
     application.delegate = applicationDelegate
     withExtendedLifetime(applicationDelegate) {
@@ -84,6 +85,7 @@ import os
 
     private let model: any PanelModel
     private let style: PanelStyle
+    private let keymap: Keymap
     private let input: (open: @Sendable () -> Int32, separator: UInt8)?
     private let pendingInput = OSAllocatedUnfairLock(initialState: PendingInput())
     private let panel: DmenuPanel
@@ -118,9 +120,13 @@ import os
     /// ponytail: never evicted; one image per path shown in this run.
     private var icons: [String: NSImage] = [:]
 
-    init(model: any PanelModel, style: PanelStyle, input: (open: @Sendable () -> Int32, separator: UInt8)?) {
+    init(
+        model: any PanelModel, style: PanelStyle, keymap: Keymap,
+        input: (open: @Sendable () -> Int32, separator: UInt8)?
+    ) {
         self.model = model
         self.style = style
+        self.keymap = keymap
         self.input = input
         searchField = style.password ? NSSecureTextField() : NSSearchField()
         switcherControl = style.switcherLabels.map {
@@ -177,6 +183,7 @@ import os
 
     private func configurePanel() {
         panel.delegate = self
+        panel.keyHandler = { [unowned self] in handleKey($0) }
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
         // A borderless panel has no title bar; the margins and prompt are the drag handle.
@@ -477,6 +484,16 @@ import os
         }
     }
 
+    /// A key-down bound in the keymap runs its action before the field editor
+    /// sees it, which would type Alt+1 as "¡" and send Control+Return as
+    /// insertLineBreak:. An IME composition keeps every key.
+    private func handleKey(_ event: NSEvent) -> Bool {
+        if let editor = searchField.currentEditor() as? NSTextView, editor.hasMarkedText() { return false }
+        guard let action = keymap.action(for: event) else { return false }
+        perform { $0.perform(action) }
+        return true
+    }
+
     @objc private func switcherClicked(_ sender: NSSegmentedControl) {
         let index = sender.selectedSegment
         perform { $0.switchTo(index) }
@@ -497,16 +514,9 @@ extension PanelController: NSTextFieldDelegate {
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
         guard !textView.hasMarkedText() else { return false }
         switch commandSelector {
+        // Shift+Return, kb-accept-alt, is taken by the keymap before it gets here.
         case #selector(NSResponder.insertNewline(_:)):
-            // Shift+Return has no binding of its own in the standard key
-            // bindings, so it arrives here; it is upstream's kb-accept-alt
-            // (source/keyb.c:127-130).
-            let modifiers = NSApp.currentEvent?.modifierFlags.intersection([.shift, .control, .option, .command])
-            if modifiers == .shift {
-                perform { $0.acceptAlternate() }
-            } else {
-                perform { $0.accept() }
-            }
+            perform { $0.accept() }
         case #selector(NSResponder.cancelOperation(_:)):
             perform { $0.cancel() }
         case #selector(NSResponder.moveUp(_:)):
@@ -619,8 +629,37 @@ extension PanelController: NSWindowDelegate {
 }
 
 private final class DmenuPanel: NSPanel {
+    /// Sees every key-down first; true consumes it.
+    var keyHandler: ((NSEvent) -> Bool)?
+
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .keyDown, keyHandler?(event) == true { return }
+        super.sendEvent(event)
+    }
+}
+
+extension KeyChord {
+    /// The chord of a key-down: `charactersIgnoringModifiers`, which keeps
+    /// Shift ("!" for Shift+1), plus Control, Shift, Option and Command.
+    init?(event: NSEvent) {
+        guard event.type == .keyDown, let key = event.charactersIgnoringModifiers, !key.isEmpty else { return nil }
+        let flags = event.modifierFlags
+        var modifiers: KeyModifiers = []
+        if flags.contains(.control) { modifiers.insert(.control) }
+        if flags.contains(.shift) { modifiers.insert(.shift) }
+        if flags.contains(.option) { modifiers.insert(.option) }
+        if flags.contains(.command) { modifiers.insert(.command) }
+        self.init(key: key, modifiers: modifiers)
+    }
+}
+
+extension Keymap {
+    func action(for event: NSEvent) -> KeyAction? {
+        KeyChord(event: event).flatMap(action(for:))
+    }
 }
 
 /// Draws a row's -a/-u color, except on the emphasized cursor row, where the

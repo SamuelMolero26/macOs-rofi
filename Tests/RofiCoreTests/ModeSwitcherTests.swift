@@ -320,4 +320,64 @@ private final class FakeMode: Mode {
         s.moveSelection(by: 1)
         #expect(s.selectedVisibleIndex == nil, "no visible row stays unselected")
     }
+
+    // MARK: Keymap actions, as source/view.c:1148-1199, 1280-1306 turn them
+    // into return values.
+
+    // MENU_CUSTOM_COMMAND carries `action - CUSTOM_1`, so kb-custom-1 is
+    // index 0 (source/view.c:1199, source/modes/script.c:385).
+    @Test func customKeyPassesTheZeroBasedIndexAndTheRow() {
+        a.answer = .reload
+        var s = switcher()
+        s.selectVisibleIndex(1)
+
+        let open = s.perform(key: .customKey(1))
+        #expect(open)
+        #expect(a.calls.last?.action == .customKey(0))
+        #expect(a.calls.last?.selectedRow == 1)
+        s.perform(key: .customKey(19))
+        #expect(a.calls.last?.action == .customKey(18))
+    }
+
+    @Test func deleteEntryPassesTheHighlightedRow() {
+        a.answer = .reload
+        var s = switcher()
+        s.selectVisibleIndex(2)
+
+        s.perform(key: .deleteEntry)
+
+        #expect(a.calls.last?.action == .deleteEntry)
+        #expect(a.calls.last?.selectedRow == 2)
+    }
+
+    // source/view.c:1148-1155: no visible row, no action.
+    @Test func deleteEntryWithoutARowDoesNothing() {
+        var s = switcher()
+        s.updateQuery("zzz")
+
+        let open = s.perform(key: .deleteEntry)
+        #expect(open)
+        #expect(a.calls.isEmpty)
+    }
+
+    @Test(arguments: [KeyAction.acceptCustom, .acceptCustomAlt])
+    func acceptCustomIsCustomInputWithoutARow(action: KeyAction) {
+        a.answer = .reload
+        var s = switcher()
+
+        s.perform(key: action)
+
+        #expect(a.calls.last?.action == .customInput)
+        #expect(a.calls.last?.selectedRow == nil)
+    }
+
+    @Test func acceptAltAcceptsTheHighlightedRow() {
+        var s = switcher()
+        s.selectVisibleIndex(1)
+
+        let open = s.perform(key: .acceptAlt)
+        #expect(!open)
+        #expect(a.calls.last?.action == .ok)
+        #expect(a.calls.last?.selectedRow == 1)
+    }
 }
