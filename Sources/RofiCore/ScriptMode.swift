@@ -150,9 +150,14 @@ public final class ScriptMode: Mode {
 /// One mode per entry of the mode list (source/rofi.c:790-826).
 /// ponytail: upstream reuses the instance when a name is listed again bare.
 public func makeModes(_ specs: [ModeSpec]) -> [any Mode] {
-    specs.map { spec in
+    let home = ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory()
+    return specs.map { spec in
         switch spec {
         case .script(let name, let path): ScriptMode(name: name, command: path)
+        case .drun(let historyPath):
+            DrunMode(home: home, history: historyPath.map { History(url: URL(fileURLWithPath: $0)) })
+        case .fileBrowser(let directory, let showHidden):
+            FileBrowserMode(directory: directory, showHidden: showHidden, home: home)
         }
     }
 }

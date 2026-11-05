@@ -1,7 +1,13 @@
 import Foundation
 
-/// One entry of the mode list. Only script modes exist so far.
+/// One entry of the mode list: a script mode or a built-in.
 public enum ModeSpec: Equatable, Sendable {
+    /// `drun` (source/modes/drun.c:1693) with its history file, nil when
+    /// `-disable-history` is set (drun.c:883-893, config/config.c:103).
+    case drun(historyPath: String?)
+    /// `filebrowser` (source/modes/filebrowser.c:729) with its `directory` and
+    /// `show-hidden` settings (395-405, 422-453); nil directory means home.
+    case fileBrowser(directory: String?, showHidden: Bool)
     /// `name:path`, split once on ':' with the path tilde-expanded
     /// (source/modes/script.c:695-703).
     case script(name: String, path: String)
@@ -9,6 +15,8 @@ public enum ModeSpec: Equatable, Sendable {
     public var name: String {
         switch self {
         case .script(let name, _): name
+        case .drun: "drun"
+        case .fileBrowser: "filebrowser"
         }
     }
 
@@ -58,28 +66,46 @@ public struct ShowOptions: Sendable {
     public var startIndex: Int?
     /// `-sidebar-mode` (source/xrmoptions.c:388-395, config/config.c:119).
     public var sidebarMode = false
+    /// `-show-icons` (source/xrmoptions.c:145, config/config.c:47).
+    public var showIcons = false
     /// Printed on stderr only when stdout is a terminal (source/rofi.c:533-545).
     public var warnings: [String] = []
     public var match = MatchOptions()
+    /// rofi's available modes: the built-ins (source/rofi.c:718-739), then
+    /// each script spec as it is first resolved (source/rofi.c:795-807).
+    public var availableModes: [ModeSpec] = []
 
     public init(arguments args: Arguments) throws {
         // xrmoptions.c:75-86 parses switchers, modi, then modes; the last one
         // present wins.
-        // ponytail: upstream defaults to `window,drun,run,ssh`
-        // (config/config.c:36-42); none of those exist yet.
-        let list = args.string("-modes") ?? args.string("-modi") ?? args.string("-switchers") ?? ""
-        // rofi's available modes: each name resolves to the first spec seen.
-        var known: [ModeSpec] = []
+        // Upstream defaults to `window,drun,run,ssh` (`drun,run,ssh` on
+        // Wayland, config/config.c:36-42); of those only drun exists here.
+        let list = args.string("-modes") ?? args.string("-modi") ?? args.string("-switchers") ?? "drun"
+        // Each name resolves to the first available mode with it, built-ins
+        // in upstream's order (source/rofi.c:732-740).
+        // ponytail: only `drun` and `filebrowser` are built in; window, run,
+        // ssh, combi, keys and recursivebrowser stay "not found".
+        // ponytail: upstream reads the filebrowser's settings from the theme
+        // (source/modes/filebrowser.c:395-405), not from flags.
+        var known: [ModeSpec] = [
+            .drun(historyPath: args.bool("disable-history", default: false) ? nil : drunHistoryPath(args)),
+            .fileBrowser(
+                directory: args.string("-filebrowser-directory"),
+                showHidden: args.bool("filebrowser-show-hidden", default: false)),
+        ]
         func resolve(_ token: String) -> ModeSpec? {
             if let spec = known.first(where: { $0.name == token }) { return spec }
             guard let spec = ModeSpec(scriptSpec: token) else { return nil }
             if !known.contains(where: { $0.name == spec.name }) { known.append(spec) }
             return spec
         }
+        // help_print_mode_not_found (source/rofi.c:547-562): every available
+        // mode, `+` on the enabled ones.
         func notFound(_ name: String) -> String {
             "Mode \(name) is not found.\nThe following modes are known:\n"
-                + known.map { "        * +\($0.name)\n" }.joined()
+                + known.map { "        * \(modes.contains($0) ? "+" : "")\($0.name)\n" }.joined()
         }
+        defer { availableModes = known }
 
         // setup_modes (source/rofi.c:812-826): strtok skips empty tokens.
         var errors: [String] = []
@@ -121,13 +147,14 @@ public struct ShowOptions: Sendable {
         // built-ins there; here it works for every mode, as find_arg_str.
         displayNames = modes.map { args.string("-display-" + $0.name) ?? $0.name }
         sidebarMode = args.bool("sidebar-mode", default: sidebarMode)
+        showIcons = args.bool("show-icons", default: showIcons)
     }
 }
 
 extension ShowOptions {
     /// `help_print_no_arguments` with its markup rendered away
-    /// (source/rofi.c:564-595). Every known mode is a listed script mode, so
-    /// none can be enabled.
+    /// (source/rofi.c:564-595): the enabled modes, then the available ones
+    /// that are not enabled.
     public var unsureWhatToShow: String {
         "Rofi is unsure what to show.\n\n"
             + "Please specify the mode you want to show.\n\n"
@@ -135,6 +162,7 @@ extension ShowOptions {
             + "The following modes are enabled:\n"
             + modes.map { "    • \($0.name)\n" }.joined()
             + "\nThe following modes can be enabled:\n"
+            + availableModes.filter { !modes.contains($0) }.map { "    • \($0.name)\n" }.joined()
             + "\nTo activate a mode, add it to the list in the modes setting.\n"
     }
 }
@@ -150,10 +178,22 @@ private func disabledModeWarning(_ mode: String, list: String) -> String {
         + "\(green)modes: [\(list)\(reset)\(red),\(mode)]\(reset).\n"
 }
 
+/// `cache_dir/rofi3.druncache` (source/modes/drun.c:65, 883-893): `-cache-dir`
+/// tilde-expanded, else g_get_user_cache_dir, which is `$XDG_CACHE_HOME`
+/// or `~/.cache` (source/rofi.c:1227-1231).
+private func drunHistoryPath(_ args: Arguments) -> String {
+    let environment = ProcessInfo.processInfo.environment
+    let directory =
+        args.string("-cache-dir").map(expandPath)
+        ?? environment["XDG_CACHE_HOME"].flatMap { $0.isEmpty ? nil : $0 }
+        ?? (environment["HOME"] ?? NSHomeDirectory()) + "/.cache"
+    return directory + "/rofi3.druncache"
+}
+
 /// `rofi_expand_path` (source/helper.c:784-813): `~` and `~user` expand in any
 /// component, then g_build_filenamev joins the components, dropping empty
 /// ones and the separators around inner ones.
-private func expandPath(_ path: String) -> String {
+func expandPath(_ path: String) -> String {
     let components = path.split(separator: "/", omittingEmptySubsequences: false).map { component -> String in
         guard component.first == "~" else { return String(component) }
         if component == "~" {
