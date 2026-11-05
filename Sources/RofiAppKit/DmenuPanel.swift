@@ -179,6 +179,9 @@ import os
         panel.delegate = self
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
+        // A borderless panel has no title bar; the margins and prompt are the drag handle.
+        // ponytail: position resets on every launch, add setFrameAutosaveName if it should persist.
+        panel.isMovableByWindowBackground = true
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.hasShadow = true
