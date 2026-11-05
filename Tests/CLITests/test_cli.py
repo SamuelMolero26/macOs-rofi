@@ -55,6 +55,7 @@ class CLIContractTests(unittest.TestCase):
             b"The following modes are enabled:\n"
             b"    \xe2\x80\xa2 a\n"
             b"\nThe following modes can be enabled:\n"
+            b"    \xe2\x80\xa2 drun\n"
             b"    \xe2\x80\xa2 filebrowser\n"
             b"\nTo activate a mode, add it to the list in the modes setting.\n",
         )
@@ -80,12 +81,14 @@ class CLIContractTests(unittest.TestCase):
             result.stderr,
             b"rofi: The following errors were detected when starting rofi:\n\n\n"
             b"Mode nope is not found.\nThe following modes are known:\n"
+            b"        * drun\n"
             b"        * filebrowser\n"
             b"        * +a\n\n",
         )
 
-    # source/rofi.c:946-950, 547-562: built-in modes such as run do not exist
-    # yet; the known list names the built-in filebrowser.
+    # source/rofi.c:946-950, 547-562, 732-739: built-in modes such as run do
+    # not exist yet; the known list names the built-ins drun (enabled by
+    # default, config/config.c:36-42) and filebrowser.
     def test_show_unimplemented_builtin_diagnoses_and_exits_dataerr(self):
         result = self.run_rofi("rofi", "-show", "run")
 
@@ -95,7 +98,20 @@ class CLIContractTests(unittest.TestCase):
             result.stderr,
             b"rofi: The following errors were detected when starting rofi:\n\n\n"
             b"Mode run is not found.\nThe following modes are known:\n"
+            b"        * +drun\n"
             b"        * filebrowser\n\n",
+        )
+
+    # source/rofi.c:564-595, config/config.c:36-42: with no mode list, drun
+    # is the enabled default.
+    def test_drun_is_the_default_enabled_mode(self):
+        result = self.run_rofi("rofi")
+
+        self.assertEqual(result.returncode, 0)
+        self.assertIn(
+            b"The following modes are enabled:\n    \xe2\x80\xa2 drun\n"
+            b"\nThe following modes can be enabled:\n    \xe2\x80\xa2 filebrowser\n",
+            result.stderr,
         )
 
     # source/rofi.c:869-888, source/helper.c:774-777: the matching error joins

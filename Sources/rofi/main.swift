@@ -77,7 +77,7 @@ func reportFailedModes(_ modes: [any Mode]) -> Bool {
     // place of the view (source/rofi.c:201-216, source/modes/script.c:242-246).
     if reportFailedModes(modes) { exit(EXIT_SUCCESS) }
     let switcher = ModeSwitcher(modes: modes, displayNames: options.displayNames, start: start, match: options.match)
-    runModePanel(switcher: switcher, sidebar: options.sidebarMode)
+    runModePanel(switcher: switcher, sidebar: options.sidebarMode, icons: options.showIcons)
     // A later run that cannot start ends its mode with no rows; its dialog
     // would show after the view closes.
     _ = reportFailedModes(modes)

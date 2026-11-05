@@ -25,6 +25,12 @@ import Testing
 
     private let home = String(cString: getenv("HOME"))
 
+    /// g_get_user_cache_dir: `$XDG_CACHE_HOME`, else `~/.cache`.
+    private var defaultHistory: String {
+        if let xdg = getenv("XDG_CACHE_HOME"), xdg.pointee != 0 { return String(cString: xdg) + "/rofi3.druncache" }
+        return home + "/.cache/rofi3.druncache"
+    }
+
     // source/xrmoptions.c:75-86 parses switchers, modi, then modes, so the
     // last of those present wins.
     @Test func modesWinsOverModiWhichWinsOverSwitchers_xrmoptions_c_75() throws {
@@ -81,18 +87,18 @@ import Testing
     @Test func unknownOrBuiltinNameIsNotFound_rofi_c_546() {
         #expect(
             errors(["-modes", "a:x,run"]) == [
-                "Mode run is not found.\nThe following modes are known:\n        * filebrowser\n        * +a\n"
+                "Mode run is not found.\nThe following modes are known:\n        * drun\n        * filebrowser\n        * +a\n"
             ])
     }
 
     // source/rofi.c:832-835, 885-888: every bad token is collected, and setup
     // errors win over `-show`.
     @Test func everyBadTokenIsCollected_rofi_c_885() throws {
-        let errors = errors(["-modes", "run,drun", "-show", "a:x"])
+        let errors = errors(["-modes", "run,drun,ssh", "-show", "a:x"])
         #expect(
             errors == [
-                "Mode run is not found.\nThe following modes are known:\n        * filebrowser\n",
-                "Mode drun is not found.\nThe following modes are known:\n        * filebrowser\n",
+                "Mode run is not found.\nThe following modes are known:\n        * drun\n        * filebrowser\n",
+                "Mode ssh is not found.\nThe following modes are known:\n        * +drun\n        * filebrowser\n",
             ])
     }
 
@@ -103,7 +109,7 @@ import Testing
         #expect(matching.hasPrefix("The configuration failed to validate:\n\tconfig.matching=bogus"))
         #expect(
             errors(["-modes", "run", "-matching", "bogus", "-show", "nope"]) == [
-                "Mode run is not found.\nThe following modes are known:\n        * filebrowser\n",
+                "Mode run is not found.\nThe following modes are known:\n        * drun\n        * filebrowser\n",
                 matching,
             ])
         #expect(errors(["-modes", "a:x", "-matching", "bogus", "-show", "nope"]) == [matching])
@@ -128,6 +134,7 @@ import Testing
                     • a
 
                 The following modes can be enabled:
+                    • drun
                     • filebrowser
 
                 To activate a mode, add it to the list in the modes setting.
@@ -147,10 +154,10 @@ import Testing
         #expect(five.description.hasSuffix("E2\n\nThere are 2 more errors."))
     }
 
-    // ponytail: upstream's default `window,drun,run,ssh` (config/config.c:36-42)
-    // filtered to implemented modes is empty for now.
-    @Test func defaultModeListIsEmpty() throws {
-        #expect(try parse([]).modes.isEmpty)
+    // config/config.c:36-42: upstream's default `window,drun,run,ssh`
+    // (Wayland `drun,run,ssh`) filtered to implemented modes is `drun`.
+    @Test func defaultModeListIsDrun_config_c_36() throws {
+        #expect(try parse([]).modes == [.drun(historyPath: defaultHistory)])
     }
 
     // source/rofi.c:935-937, 161-168: `-show` picks the first mode with that
@@ -188,7 +195,7 @@ import Testing
     @Test func showUnknownNameIsAnError_rofi_c_946() {
         #expect(
             errors(["-modes", "a:x", "-show", "run"]) == [
-                "Mode run is not found.\nThe following modes are known:\n        * filebrowser\n        * +a\n"
+                "Mode run is not found.\nThe following modes are known:\n        * drun\n        * filebrowser\n        * +a\n"
             ])
     }
 
@@ -201,6 +208,7 @@ import Testing
     // source/rofi.c:952-953: a bare trailing `-show` runs the first mode.
     @Test func bareShowRunsTheFirstMode_rofi_c_952() throws {
         #expect(try parse(["-modes", "a:x,b:y", "-show"]).startIndex == 0)
+        #expect(try parse(["-show"]).startIndex == 0)
     }
 
     // source/rofi.c:952-958, 564-595: no `-show`, or a bare one with no modes,
@@ -208,7 +216,6 @@ import Testing
     @Test func noShowLeavesTheStartUnset_rofi_c_954() throws {
         #expect(try parse(["-modes", "a:x"]).startIndex == nil)
         #expect(try parse(["-modes", "", "-show"]).startIndex == nil)
-        #expect(try parse(["-show"]).startIndex == nil)
     }
 
     // source/mode.c:189-208: `-display-<name>` replaces the name in the chrome.
@@ -222,6 +229,13 @@ import Testing
         #expect(try !parse([]).sidebarMode)
         #expect(try parse(["-sidebar-mode"]).sidebarMode)
         #expect(try !parse(["-no-sidebar-mode"]).sidebarMode)
+    }
+
+    // config/config.c:47, source/xrmoptions.c:145.
+    @Test func showIconsIsABooleanOffByDefault_xrmoptions_c_145() throws {
+        #expect(try !parse([]).showIcons)
+        #expect(try parse(["-show-icons"]).showIcons)
+        #expect(try !parse(["-no-show-icons"]).showIcons)
     }
 
     // config/config.c:111 and source/xrmoptions.c:364-370: `-show` matching
@@ -242,9 +256,9 @@ import Testing
     // so `-show` enables it with the usual warning.
     @Test func showResolvesTheFilebrowserBuiltin_filebrowser_c_729() throws {
         let options = try parse(["-show", "filebrowser"])
-        #expect(options.modes == [.fileBrowser(directory: nil, showHidden: false)])
-        #expect(options.modes.map(\.name) == ["filebrowser"])
-        #expect(options.startIndex == 0)
+        #expect(options.modes.last == .fileBrowser(directory: nil, showHidden: false))
+        #expect(options.modes.map(\.name) == ["drun", "filebrowser"])
+        #expect(options.startIndex == 1)
         #expect(options.warnings.count == 1)
     }
 
@@ -287,9 +301,37 @@ import Testing
     @Test func enabledFilebrowserIsMarkedAndNotOffered_rofi_c_547() throws {
         #expect(
             errors(["-modes", "filebrowser,run"]) == [
-                "Mode run is not found.\nThe following modes are known:\n        * +filebrowser\n"
+                "Mode run is not found.\nThe following modes are known:\n        * drun\n        * +filebrowser\n"
             ])
         let unsure = try parse(["-modes", "filebrowser"]).unsureWhatToShow
-        #expect(unsure.contains("enabled:\n    • filebrowser\n\nThe following modes can be enabled:\n\nTo activate"))
+        #expect(
+            unsure.contains(
+                "enabled:\n    • filebrowser\n\nThe following modes can be enabled:\n    • drun\n\nTo activate"))
+    }
+
+    // source/rofi.c:732-739: drun is a built-in, registered before
+    // filebrowser; listed by default it starts with no warning.
+    @Test func showResolvesTheDrunBuiltin_rofi_c_735() throws {
+        let options = try parse(["-show", "drun"])
+        #expect(options.modes == [.drun(historyPath: defaultHistory)])
+        #expect(options.modes.map(\.name) == ["drun"])
+        #expect(options.startIndex == 0)
+        #expect(options.warnings.isEmpty)
+        #expect(options.availableModes.map(\.name) == ["drun", "filebrowser"])
+    }
+
+    // source/modes/drun.c:883-893, source/rofi.c:1227-1231: the history
+    // lives in `-cache-dir`, tilde-expanded; `-disable-history` drops it
+    // (config/config.c:103).
+    @Test func drunHistoryFollowsCacheDirAndDisableHistory_drun_c_883() throws {
+        #expect(
+            try parse(["-modes", "drun", "-cache-dir", "/tmp/c"]).modes == [
+                .drun(historyPath: "/tmp/c/rofi3.druncache")
+            ])
+        #expect(
+            try parse(["-modes", "drun", "-cache-dir", "~/c"]).modes == [
+                .drun(historyPath: home + "/c/rofi3.druncache")
+            ])
+        #expect(try parse(["-modes", "drun", "-disable-history"]).modes == [.drun(historyPath: nil)])
     }
 }

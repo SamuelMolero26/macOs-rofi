@@ -244,6 +244,17 @@ private struct Opened: Equatable {
         #expect(mode.matches(mode.rows[row(mode, "Alpha.md")], matcher: matcher))
         #expect(!mode.matches(mode.rows[row(mode, "Docs")], matcher: matcher))
     }
+
+    // filebrowser.c:620-638 fetches an icon per entry by its path; the up row
+    // shows the parent folder's, the root's own at the root.
+    @Test func iconPathIsTheEntryPath_filebrowser_c_620() {
+        let mode = make()
+        #expect(mode.iconPath(at: 0) == "/home")
+        #expect(mode.iconPath(at: row(mode, "Docs")) == "/home/u/Docs")
+        #expect(mode.iconPath(at: row(mode, "zeta.txt")) == "/home/u/zeta.txt")
+        #expect(mode.iconPath(at: mode.rows.count) == nil)
+        #expect(make(directory: "/").iconPath(at: 0) == "/")
+    }
 }
 
 // The real tree behind `FileBrowserMode`: readdir's types, links resolved by

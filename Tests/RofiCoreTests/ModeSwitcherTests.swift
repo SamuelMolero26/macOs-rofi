@@ -46,6 +46,11 @@ private final class FakeMode: Mode {
         #expect(s.selectedVisibleIndex == 0)
     }
 
+    // source/mode.c:87-96: a mode without `_get_icon` gets no icon of its own.
+    @Test func modesHaveNoIconByDefault_mode_c_87() {
+        #expect(a.iconPath(at: 0) == nil)
+    }
+
     // source/rofi.c:262-263: NEXT_DIALOG wraps with (cur + 1) % n.
     @Test func nextWrapsAround_rofi_c_262() {
         var s = switcher(start: 2)

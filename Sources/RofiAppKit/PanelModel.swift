@@ -24,6 +24,8 @@ struct PanelStyle {
     /// One switcher button per mode, or nil for no switcher row
     /// (source/view.c:1790-1810).
     var switcherLabels: [String]?
+    /// An icon column before the text (`-show-icons`, source/xrmoptions.c:145).
+    var showIcons = false
 }
 
 /// The state behind a panel: a dmenu session or a `-show` mode switcher.
@@ -43,6 +45,8 @@ struct PanelStyle {
 
     func displayText(for match: DmenuMatch) -> String
     func state(of match: DmenuMatch) -> DmenuRowState
+    /// The file whose Finder icon the row shows, or nil for none.
+    func iconPath(for match: DmenuMatch) -> String?
 
     func updateQuery(_ query: String) -> PanelUpdate
     /// Rows streamed in after the panel opened; only dmenu streams.
@@ -91,6 +95,7 @@ struct PanelStyle {
 
     func displayText(for match: DmenuMatch) -> String { session.displayText(for: match) }
     func state(of match: DmenuMatch) -> DmenuRowState { session.state(of: match) }
+    func iconPath(for match: DmenuMatch) -> String? { nil }
 
     func updateQuery(_ query: String) -> PanelUpdate {
         complete(session.updateQuery(query)) ?? .reload
