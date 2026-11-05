@@ -70,8 +70,9 @@ public struct DmenuPipeline: Sendable {
     /// nil to show it whole.
     public var displayColumns: [String]?
     /// `-display-column-separator`: the case-insensitive regex that splits the
-    /// display source into columns.
-    public var displayColumnSeparator = "\t"
+    /// display source into columns, compiled once; nil when the pattern is
+    /// invalid, which splits every row into no pieces.
+    public private(set) var displayColumnSeparator = compileColumnSeparator("\t")
     /// `-markup-rows`: rows are Pango markup, drawn styled and matched on
     /// their text.
     public var markupRows = false
@@ -144,7 +145,9 @@ public struct DmenuPipeline: Sendable {
         // g_strsplit splits "" into no items.
         if let columns = args.string("-display-columns") {
             displayColumns = columns.isEmpty ? [] : columns.components(separatedBy: ",")
-            displayColumnSeparator = args.string("-display-column-separator") ?? displayColumnSeparator
+            if let separator = args.string("-display-column-separator") {
+                displayColumnSeparator = compileColumnSeparator(separator)
+            }
         }
         markupRows = args.has("-markup-rows")
         password = args.has("-password")
@@ -310,15 +313,17 @@ private func parseMatching(_ value: String) throws -> MatchingMethod? {
     return firstMethod
 }
 
+private func compileColumnSeparator(_ pattern: String) -> NSRegularExpression? {
+    try? NSRegularExpression(pattern: pattern, options: .caseInsensitive)
+}
+
 /// `g_regex_split_simple(separator, string, G_REGEX_CASELESS, 0)`: empty pieces
 /// and capture groups are kept, an empty match splits between characters, ""
 /// splits into nothing, and an invalid pattern yields no pieces.
 // ponytail: ICU regex syntax stands in for PCRE, and an unmatched capture
 // group gives "" even after the last matched one, which GLib omits.
-private func splitColumns(_ string: String, separator: String) -> [String] {
-    guard !string.isEmpty,
-        let regex = try? NSRegularExpression(pattern: separator, options: .caseInsensitive)
-    else { return [] }
+private func splitColumns(_ string: String, separator regex: NSRegularExpression?) -> [String] {
+    guard !string.isEmpty, let regex else { return [] }
     let text = string as NSString
     var pieces: [String] = []
     var pieceStart = 0
