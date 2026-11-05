@@ -163,6 +163,20 @@ class CLIContractTests(unittest.TestCase):
         self.assertTrue(result.stderr.startswith(b"Mode \x1b[0;31m" + spec.encode() + b"\x1b[0m is not enabled."))
         self.assertTrue(result.stderr.endswith(failure))
 
+    # source/keyb.c:450-491, source/rofi.c:1271, 840-857: a binding that does
+    # not parse joins the startup error dialog, for dmenu too.
+    def test_invalid_key_binding_diagnoses_and_exits_dataerr(self):
+        result = self.run_rofi("rofi", "-dmenu", "-dump", "-kb-custom-1", "Alt+bogus")
+
+        self.assertEqual(result.returncode, 65)
+        self.assertEqual(result.stdout, b"")
+        self.assertEqual(
+            result.stderr,
+            b"rofi: The following errors were detected when starting rofi:\n\n\n"
+            b"Failed to set binding Alt+bogus for: Custom keybinding 1 (kb-custom-1):\n"
+            b"\tUnknown key: bogus\n\n",
+        )
+
     def test_invalid_matching_diagnoses_and_exits_dataerr(self):
         result = self.run_rofi("rofi", "-dmenu", "-dump", "-matching", "bogus,fuzzy,nope")
 

@@ -502,6 +502,115 @@ import Testing
         #expect(session.selectionOverlay == "2/4")
         #expect(session.accept()?.output == "0\n3\n")
     }
+
+    // MARK: Keymap actions: source/view.c:1148-1199, 1280-1306 set the return
+    // value, dmenu_finalize acts on it (source/modes/dmenu.c:839-965).
+
+    // MENU_CUSTOM_COMMAND prints the highlighted row and exits 10 + N - 1
+    // (source/modes/dmenu.c:957-961, 796-799).
+    @Test func customKeyPrintsTheHighlightedRowWithItsExitCode() throws {
+        var session = try makeSession(["-format", "i:s"])
+        session.selectVisibleIndex(1)
+
+        let completion = session.perform(.customKey(1))
+
+        #expect(completion == DmenuCompletion(output: "1:Banana\n", outcome: .customKey(1)))
+        #expect(completion?.outcome.exitCode == 10)
+        let last = session.perform(.customKey(19))
+        #expect(last?.outcome.exitCode == 28)
+    }
+
+    // With no row, dmenu_print_results falls back to the input
+    // (source/modes/dmenu.c:817-825, view.c:1194-1198).
+    @Test func customKeyWithoutARowPrintsTheQuery() throws {
+        var session = try makeSession(["-format", "i:s"])
+        #expect(session.updateQuery("zzz") == nil)
+
+        #expect(session.perform(.customKey(2)) == DmenuCompletion(output: "-1:zzz\n", outcome: .customKey(2)))
+    }
+
+    // Normal mode does not check nonselectable rows for MENU_CUSTOM_COMMAND
+    // (source/modes/dmenu.c:957-961); -no-custom does (883-886).
+    @Test func customKeyOnANonselectableRowOnlyCompletesInNormalMode() throws {
+        var row = Row(parsing: "heading")
+        row.nonselectable = true
+        var normal = try makeSession(rows: [row])
+        var noCustom = try makeSession(["-no-custom"], rows: [row])
+
+        #expect(normal.perform(.customKey(3)) == DmenuCompletion(output: "heading\n", outcome: .customKey(3)))
+        #expect(noCustom.perform(.customKey(3)) == nil)
+    }
+
+    // -no-custom/-only-match restart without a row (source/modes/dmenu.c:847-899).
+    @Test(arguments: ["-no-custom", "-only-match"])
+    func customKeyWithoutARowKeepsOnlyMatchOpen(flag: String) throws {
+        var session = try makeSession([flag])
+        #expect(session.updateQuery("zzz") == nil)
+
+        #expect(session.perform(.customKey(1)) == nil)
+    }
+
+    @Test func customKeyPrintsToggledRows() throws {
+        var session = try makeSession(["-multi-select", "-format", "i"])
+        #expect(session.acceptAlternate() == nil)
+        #expect(session.acceptAlternate() == nil)
+
+        #expect(session.perform(.customKey(4)) == DmenuCompletion(output: "0\n1\n", outcome: .customKey(4)))
+    }
+
+    // kb-accept-custom and kb-accept-custom-alt drop the selection and return
+    // MENU_CUSTOM_INPUT (view.c:1295-1306); dmenu prints the input
+    // (source/modes/dmenu.c:951-955).
+    @Test(arguments: [KeyAction.acceptCustom, .acceptCustomAlt])
+    func acceptCustomPrintsTheQueryOverTheHighlightedRow(action: KeyAction) throws {
+        var session = try makeSession(["-format", "i:s"])
+        #expect(session.updateQuery("a") == nil)
+        #expect(session.selectedVisibleIndex == 0)
+
+        #expect(session.perform(action) == DmenuCompletion(output: "-1:a\n", outcome: .accepted))
+    }
+
+    @Test(arguments: [KeyAction.acceptCustom, .acceptCustomAlt], ["-no-custom", "-only-match"])
+    func acceptCustomIsRefusedWithoutCustomInput(action: KeyAction, flag: String) throws {
+        var session = try makeSession([flag])
+
+        #expect(session.perform(action) == nil)
+    }
+
+    @Test func acceptCustomPrintsToggledRows() throws {
+        var session = try makeSession(["-multi-select", "-format", "s"])
+        #expect(session.acceptAlternate() == nil)
+        #expect(session.updateQuery("zzz") == nil)
+
+        let completion = session.perform(.acceptCustom)
+        #expect(completion?.output == "apple\n")
+    }
+
+    @Test func acceptAltIsAcceptAlternate() throws {
+        var session = try makeSession(["-multi-select"])
+
+        #expect(session.perform(.acceptAlt) == nil)
+        #expect(session.selectionOverlay == "1/3")
+    }
+
+    // MENU_ENTRY_DELETE matches no branch in normal mode, so dmenu finishes
+    // with FALSE: no output, exit 1 (source/modes/dmenu.c:896-965, 796-797).
+    // Without a visible row view.c:1148-1155 ignores the key.
+    @Test func deleteEntryEndsNormalModeLikeCancel() throws {
+        var session = try makeSession()
+
+        #expect(session.perform(.deleteEntry) == DmenuCompletion(output: nil, outcome: .cancelled))
+        #expect(session.updateQuery("zzz") == nil)
+        #expect(session.perform(.deleteEntry) == nil)
+    }
+
+    // -no-custom/-only-match restart on it (source/modes/dmenu.c:893-899).
+    @Test(arguments: ["-no-custom", "-only-match"])
+    func deleteEntryKeepsOnlySelectedModeOpen(flag: String) throws {
+        var session = try makeSession([flag])
+
+        #expect(session.perform(.deleteEntry) == nil)
+    }
 }
 
 extension DmenuStart {

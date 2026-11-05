@@ -42,6 +42,16 @@ public enum KeyAction: Hashable, Sendable, CaseIterable {
         }
     }
 
+    /// The binding's description in source/keyb.c:119-134, 216-291.
+    public var comment: String {
+        switch self {
+        case .acceptCustom, .acceptCustomAlt: "Use entered text as command (in ssh/run modes)"
+        case .acceptAlt: "Use alternate accept command."
+        case .deleteEntry: "Delete entry from history"
+        case .customKey(let n): "Custom keybinding \(n)"
+        }
+    }
+
     /// Keysyms of Shift+1 ... Shift+9 as upstream binds custom-11..19.
     private static let shiftedDigitKeysyms = [
         "exclam", "at", "numbersign", "dollar", "percent", "dead_circumflex", "ampersand", "asterisk", "parenleft",
@@ -88,9 +98,17 @@ public struct KeyChord: Hashable, Sendable {
 }
 
 /// A binding string that does not parse; the payload is the offending token.
-public enum KeyBindingError: Error, Equatable {
+public enum KeyBindingError: Error, Equatable, CustomStringConvertible {
     case unknownModifier(String)
     case unknownKey(String)
+
+    /// ponytail: nkutils' own wording is not vendored upstream, so this is ours.
+    public var description: String {
+        switch self {
+        case .unknownModifier(let token): "Unknown modifier: \(token)"
+        case .unknownKey(let token): "Unknown key: \(token)"
+        }
+    }
 }
 
 /// Which chord triggers which action, starting from upstream's defaults.
@@ -113,6 +131,30 @@ public struct Keymap: Sendable {
         bindings[action] = try Keymap.parse(binding)
     }
 
+    /// Upstream's defaults with every `-kb-<name> <binding>` applied; each
+    /// binding is an option (source/keyb.c:416-423). Like parse_keys_abe
+    /// (source/keyb.c:450-491) every failing alternative is one startup error
+    /// with its markup rendered away, and the dialog exits `EX_DATAERR`
+    /// (source/rofi.c:1271, 840-857, 882-885).
+    public init(arguments args: Arguments) throws {
+        self.init()
+        var errors: [String] = []
+        for action in KeyAction.allCases {
+            guard let binding = args.string("-" + action.optionName) else { continue }
+            var chords: [KeyChord] = []
+            for alternative in binding.split(separator: ",") {
+                do {
+                    chords += try Keymap.parse(String(alternative))
+                } catch {
+                    errors.append(
+                        "Failed to set binding \(binding) for: \(action.comment) (\(action.optionName)):\n\t\(error)\n")
+                }
+            }
+            bindings[action] = chords
+        }
+        if !errors.isEmpty { throw InvalidModeConfiguration(errors: errors) }
+    }
+
     /// The action bound to `chord`, if any.
     public func action(for chord: KeyChord) -> KeyAction? {
         KeyAction.allCases.first { bindings[$0]?.contains(chord) == true }
@@ -126,7 +168,9 @@ public struct Keymap: Sendable {
         try binding.split(separator: ",").compactMap { alternative in
             let alternative = alternative.trimmingCharacters(in: .whitespaces)
             guard !alternative.isEmpty else { return nil }
-            var tokens = alternative.split(separator: "+", omittingEmptySubsequences: false).map(String.init)
+            var tokens = alternative.split(separator: "+", omittingEmptySubsequences: false).map {
+                $0.trimmingCharacters(in: .whitespaces)
+            }
             let keyToken = tokens.removeLast()
             var modifiers: KeyModifiers = []
             for token in tokens {
@@ -150,9 +194,10 @@ public struct Keymap: Sendable {
     ]
 
     /// X11 keysym names (matched in any case) mapped to the character AppKit
-    /// reports for that key. Shifted-digit names assume a US layout. macOS
-    /// has no dead circumflex on Shift+6, so `dead_circumflex` (upstream's
-    /// custom-16 default) is plain `^`.
+    /// reports for that key: navigation and F keys as AppKit's function-key
+    /// characters (NSUpArrowFunctionKey...). Shifted-digit names assume a US
+    /// layout. macOS has no dead circumflex on Shift+6, so `dead_circumflex`
+    /// (upstream's custom-16 default) is plain `^`.
     private static let keysyms: [String: String] = [
         "return": "\r",
         "kp_enter": "\u{3}",  // NSEnterCharacter
@@ -171,5 +216,19 @@ public struct Keymap: Sendable {
         "asterisk": "*",
         "parenleft": "(",
         "parenright": ")",
-    ]
+        "space": " ",
+        "comma": ",",
+        "plus": "+",
+        "minus": "-",
+        "period": ".",
+        "slash": "/",
+        "up": "\u{F700}",
+        "down": "\u{F701}",
+        "left": "\u{F702}",
+        "right": "\u{F703}",
+        "home": "\u{F729}",
+        "end": "\u{F72B}",
+        "page_up": "\u{F72C}",
+        "page_down": "\u{F72D}",
+    ].merging((1...12).map { ("f\($0)", String(UnicodeScalar(0xF703 + $0)!)) }) { $1 }
 }

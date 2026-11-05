@@ -54,8 +54,9 @@ struct PanelStyle {
     func selectVisibleIndex(_ index: Int?)
     func moveSelection(by offset: Int)
     func accept() -> PanelUpdate
-    /// kb-accept-alt, Shift+Return (source/keyb.c:127-130).
-    func acceptAlternate() -> PanelUpdate
+    /// A keymap action: kb-accept-alt, kb-accept-custom(-alt),
+    /// kb-delete-entry or kb-custom-N (source/keyb.c:119-134, 216-291).
+    func perform(_ action: KeyAction) -> PanelUpdate
     func cancel() -> PanelUpdate
     /// kb-mode-next (+1) and kb-mode-previous (-1). Without modes
     /// (`currentMode` nil) the keys keep their AppKit behavior.
@@ -111,8 +112,8 @@ struct PanelStyle {
 
     /// A `-multi-select` toggle keeps the panel open, so the ballots, the
     /// moved selection and the count overlay are redrawn.
-    func acceptAlternate() -> PanelUpdate {
-        complete(session.acceptAlternate()) ?? (session.pipeline.multiSelect ? .reload : .none)
+    func perform(_ action: KeyAction) -> PanelUpdate {
+        complete(session.perform(action)) ?? (action == .acceptAlt && session.pipeline.multiSelect ? .reload : .none)
     }
 
     func switchMode(by offset: Int) -> PanelUpdate { .none }
