@@ -62,6 +62,23 @@ import Testing
         #expect(loaded.overrides == .init(lines: 9, location: .east))
     }
 
+    /// dmenu counts `-l 15`, its default, as unset, so the theme's lines win
+    /// (source/modes/dmenu.c:575-590); a value that wraps negative is zero.
+    @Test func defaultLinesFlagOverridesNothing() throws {
+        let files = FakeFiles()
+        let defaultLines = try RasiConfigurationLoader(environment: environment(files: files)).load(
+            arguments: Arguments(["rofi", "-theme-str", "listview { lines: 5; }", "-l", "15"])
+        )
+        #expect(defaultLines.resolution.value(selector: .configuration, property: .lines) == nil)
+        #expect(defaultLines.resolution.value(selector: .listview, property: .lines) == .integer(5))
+        #expect(defaultLines.overrides.lines == nil)
+
+        let wrapped = try RasiConfigurationLoader(environment: environment(files: files)).load(
+            arguments: Arguments(["rofi", "-l", "4294967295"])
+        )
+        #expect(wrapped.overrides.lines == 0)
+    }
+
     @Test func resolvesRelativeImportsAndOpensEachPathOnce() throws {
         let files = FakeFiles([
             "/work/config.rasi": "@import \"shared.rasi\"\n@import \"shared.rasi\"",

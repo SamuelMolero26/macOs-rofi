@@ -10,24 +10,6 @@ enum PanelUpdate {
     case close
 }
 
-/// How one panel looks, read once when it is built.
-struct PanelStyle {
-    /// An `NSSecureTextField` instead of an `NSSearchField`.
-    var password = false
-    var atBottom = false
-    /// Rows the panel is sized around, or nil for the default panel.
-    var fixedRows: Int?
-    var markupRows = false
-    var ellipsizeMode = EllipsizeMode.end
-    /// Leads every accessibility label, such as "Dmenu prompt".
-    var accessibilityName = "Dmenu"
-    /// One switcher button per mode, or nil for no switcher row
-    /// (source/view.c:1790-1810).
-    var switcherLabels: [String]?
-    /// An icon column before the text (`-show-icons`, source/xrmoptions.c:145).
-    var showIcons = false
-}
-
 /// The state behind a panel: a dmenu session or a `-show` mode switcher.
 /// Each model keeps its own outcome; the panel only redraws and closes.
 @MainActor protocol PanelModel: AnyObject {
@@ -76,15 +58,18 @@ struct PanelStyle {
         self.session = session
     }
 
-    var style: PanelStyle {
+    /// The theme in `base` plus dmenu's flags. A direct `-l` wins over the
+    /// theme's lines, which win over the default a message implies; `-b`
+    /// already resolved to `location` unless `-location` beat it (ADR 0001 §2).
+    func style(base: PanelStyle = PanelStyle()) -> PanelStyle {
         let pipeline = session.pipeline
-        return PanelStyle(
-            password: pipeline.password,
-            atBottom: pipeline.atBottom,
-            fixedRows: pipeline.fixedRows,
-            markupRows: pipeline.markupRows,
-            ellipsizeMode: pipeline.ellipsizeMode
-        )
+        var style = base
+        style.password = pipeline.password
+        style.fixedRows = pipeline.lines ?? base.fixedRows ?? pipeline.fixedRows
+        if pipeline.atBottom, style.location == nil { style.location = .south }
+        style.markupRows = pipeline.markupRows
+        style.ellipsizeMode = pipeline.ellipsizeMode
+        return style
     }
 
     var query: String { session.query }

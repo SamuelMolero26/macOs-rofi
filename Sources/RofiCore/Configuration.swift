@@ -318,7 +318,12 @@ private struct CanonicalRasi {
 }
 
 private func commandLineOverrides(_ arguments: Arguments) -> RasiConfigurationOverrides {
-    let lines = arguments.uint("-l").map(Int.init)
+    // Like DmenuPipeline: dmenu's default `-l 15` overrides nothing, and the
+    // theme value is a signed int, so a negative one shows no rows
+    // (source/modes/dmenu.c:575-590).
+    let lines = arguments.uint("-l").flatMap { value in
+        value == 15 ? nil : max(0, Int(Int32(truncatingIfNeeded: value)))
+    }
     let location: RasiLocation?
     if let value = arguments.string("-location") {
         location = parseLocation(value)

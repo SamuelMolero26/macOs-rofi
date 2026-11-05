@@ -272,6 +272,37 @@ class CLIContractTests(unittest.TestCase):
         )
         self.assertEqual(result.stderr, b"")
 
+    # ADR 0001 §3-4: the panel style is built before dmenu runs, and a theme
+    # value with no native effect warns instead of failing.
+    def test_unavailable_theme_font_warns_and_dmenu_still_runs(self):
+        with tempfile.TemporaryDirectory() as home:
+            environment = os.environ.copy()
+            environment["HOME"] = home
+            environment["XDG_CONFIG_HOME"] = str(Path(home) / "config")
+            result = subprocess.run(
+                [
+                    "rofi",
+                    "-dmenu",
+                    "-dump",
+                    "-theme-str",
+                    'window { font: "No Such Family Anywhere 12"; }',
+                ],
+                executable=ROFI,
+                input=b"a\n",
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=environment,
+                check=False,
+            )
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, b"a\n")
+        self.assertEqual(
+            result.stderr,
+            b"rofi: warning: <theme-str:1>:1:10: font 'No Such Family Anywhere 12' "
+            b"is not available; the built-in font is kept\n",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
