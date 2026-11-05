@@ -10,7 +10,7 @@ import os
     streaming input: (open: @Sendable () -> Int32, separator: UInt8)?
 ) -> DmenuCompletion {
     let model = DmenuPanelModel(session: session)
-    runPanel(model: model, style: model.style, keymap: Keymap(), streaming: input)
+    runPanel(model: model, style: model.style, keymap: session.pipeline.keymap, streaming: input)
     guard let completion = model.completion else {
         preconditionFailure("dmenu panel stopped without a completion")
     }

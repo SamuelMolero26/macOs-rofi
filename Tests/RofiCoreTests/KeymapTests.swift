@@ -119,6 +119,61 @@ import Testing
         #expect(lookup("1", .control, in: keymap) == nil)
     }
 
+    @Test func parsesMoreUpstreamKeysyms() throws {
+        #expect(try Keymap.parse("Control+space") == [KeyChord(key: " ", modifiers: .control)])
+        #expect(try Keymap.parse("Alt+comma") == [KeyChord(key: ",", modifiers: .option)])
+        #expect(try Keymap.parse("Control+Page_Down") == [KeyChord(key: "\u{F72D}", modifiers: .control)])
+    }
+
+    @Test(arguments: [
+        ("plus", "+"), ("minus", "-"), ("period", "."), ("slash", "/"), ("Up", "\u{F700}"), ("Down", "\u{F701}"),
+        ("Left", "\u{F702}"), ("Right", "\u{F703}"), ("Home", "\u{F729}"), ("End", "\u{F72B}"),
+        ("Page_Up", "\u{F72C}"), ("F1", "\u{F704}"), ("F12", "\u{F70F}"),
+    ])
+    func parsesNavigationAndPunctuationKeysyms(name: String, key: String) throws {
+        #expect(try Keymap.parse("Alt+" + name) == [KeyChord(key: key, modifiers: .option)])
+    }
+
+    @Test func tokensAreTrimmed() throws {
+        #expect(try Keymap.parse("Alt + 1") == [KeyChord(key: "1", modifiers: .option)])
+    }
+
+    // kb-remove-char-back includes Shift+BackSpace, so the keymap leaves it be.
+    @Test func shiftBackspaceIsUnbound() {
+        #expect(lookup("\u{7F}", .shift) == nil)
+    }
+
+    // MARK: `-kb-<name> <binding>` (source/keyb.c:416-423 registers each
+    // binding as an option; parse_keys_abe reports failures, 450-491).
+
+    private func keymap(_ argv: [String]) throws -> Keymap {
+        try Keymap(arguments: Arguments(["rofi"] + argv))
+    }
+
+    @Test func optionRebindsItsAction() throws {
+        let keymap = try keymap(["-kb-custom-1", "Control+1", "-kb-accept-custom", ""])
+
+        #expect(lookup("1", .control, in: keymap) == .customKey(1))
+        #expect(lookup("1", .option, in: keymap) == nil)
+        #expect(lookup(returnKey, .control, in: keymap) == nil)
+        #expect(lookup("2", .option, in: keymap) == .customKey(2))
+    }
+
+    // One message per failing alternative in binding-table order, worded as
+    // parse_keys_abe's with its markup rendered away (source/keyb.c:476-482).
+    @Test func invalidBindingsAreStartupErrors() {
+        #expect(
+            throws: InvalidModeConfiguration(errors: [
+                "Failed to set binding Meta+Delete for: Delete entry from history (kb-delete-entry):\n"
+                    + "\tUnknown modifier: Meta\n",
+                "Failed to set binding Alt+bogus,Hyper+1 for: Custom keybinding 1 (kb-custom-1):\n\tUnknown key: bogus\n",
+                "Failed to set binding Alt+bogus,Hyper+1 for: Custom keybinding 1 (kb-custom-1):\n\tUnknown modifier: Hyper\n",
+            ])
+        ) {
+            try keymap(["-kb-delete-entry", "Meta+Delete", "-kb-custom-1", "Alt+bogus,Hyper+1"])
+        }
+    }
+
     @Test func failedRebindKeepsPreviousBindings() {
         var keymap = Keymap()
         #expect(throws: KeyBindingError.unknownModifier("Meta")) {
