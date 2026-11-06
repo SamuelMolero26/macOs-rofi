@@ -32,6 +32,14 @@ import Testing
         #expect(Arguments(["-format", "a", "-format", "b"]).string("-format") == nil)
     }
 
+    @Test func stringsReturnsValuesInOccurrenceOrder() {
+        let args = Arguments(["rofi", "-theme-str", "first", "-other", "x", "-THEME-STR", "second"])
+
+        #expect(args.strings("-theme-str") == ["first", "second"])
+        #expect(args.string("-theme-str") == "first")
+        #expect(Arguments(["rofi", "-theme-str"]).strings("-theme-str") == [])
+    }
+
     @Test func bytesReturnTheRawValueOfTheFirstOccurrence() {
         let args = Arguments(rawArgv: [Array("rofi".utf8), Array("-input".utf8), [0x66, 0xFF]])
         #expect(args.bytes("-input") == [0x66, 0xFF])

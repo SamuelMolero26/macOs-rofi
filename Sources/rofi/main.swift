@@ -58,7 +58,7 @@ func reportFailedModes(_ modes: [any Mode]) -> Bool {
 /// accepting and cancelling both exit 0 (source/rofi.c:151).
 /// ponytail: `-e`, `-help` and the other actions are not implemented and
 /// leave rofi unsure what to show.
-@MainActor func runShow(_ args: Arguments) -> Never {
+@MainActor func runShow(_ args: Arguments, style: PanelStyle) -> Never {
     let options: ShowOptions
     do {
         options = try ShowOptions(arguments: args)
@@ -80,7 +80,9 @@ func reportFailedModes(_ modes: [any Mode]) -> Bool {
     // place of the view (source/rofi.c:201-216, source/modes/script.c:242-246).
     if reportFailedModes(modes) { exit(EXIT_SUCCESS) }
     let switcher = ModeSwitcher(modes: modes, displayNames: options.displayNames, start: start, match: options.match)
-    runModePanel(switcher: switcher, sidebar: options.sidebarMode, icons: options.showIcons, keymap: options.keymap)
+    runModePanel(
+        switcher: switcher, sidebar: options.sidebarMode, icons: options.showIcons, keymap: options.keymap,
+        style: style)
     // A later run that cannot start ends its mode with no rows; its dialog
     // would show after the view closes.
     _ = reportFailedModes(modes)
@@ -89,9 +91,32 @@ func reportFailedModes(_ modes: [any Mode]) -> Bool {
 
 let args = Arguments(rawArgv: rawCommandLineArguments())
 
+let configuration: RasiConfiguration
+do {
+    configuration = try RasiConfigurationLoader().load(arguments: args)
+} catch {
+    fail("\(error)")
+}
+func reportWarnings(_ warnings: [RasiDiagnostic]) {
+    for warning in warnings {
+        report("warning: \(warning.source):\(warning.line):\(warning.column): \(warning.message)\n")
+    }
+}
+
+reportWarnings(configuration.warnings)
+// One style for both panels (ADR 0001 §3). Built before -dump-config so its
+// warnings reach stderr there too (ADR 0001 §2).
+let (style, styleWarnings) = PanelStyle.theme(configuration.resolution)
+reportWarnings(styleWarnings)
+
+if args.has("-dump-config") {
+    FileHandle.standardOutput.write(Data(configuration.canonicalRasi.utf8))
+    exit(EXIT_SUCCESS)
+}
+
 // source/rofi.c:1043-1057.
 let invokedAsDmenu = args.argv.first?.split(separator: "/").last == "dmenu"
-guard args.has("-dmenu") || invokedAsDmenu else { runShow(args) }
+guard args.has("-dmenu") || invokedAsDmenu else { runShow(args, style: style) }
 
 let pipeline: DmenuPipeline
 do {
@@ -125,5 +150,6 @@ case .session(let session):
     // The reader dies with the process when `finish` exits.
     finish(
         runDmenuPanel(
-            session: session, streaming: pipeline.isAsync ? ({ [path] in openInput(path) }, pipeline.separator) : nil))
+            session: session, style: style,
+            streaming: pipeline.isAsync ? ({ [path] in openInput(path) }, pipeline.separator) : nil))
 }
