@@ -1,0 +1,18 @@
+/*
+ * Derived from upstream rofi themes/sidebar.rasi by Dave Davenport (Qball).
+ * Pinned reference: rofi commit 1ad1df6b72d4c8b0e40e8ced1249ef8a8a6bc0ad.
+ * Reduced to a parser compatibility fixture under rofi's MIT license.
+ */
+* {
+    text-color: #ffeedd;
+    background-color: rgba(0, 0, 0, 0);
+    blue: #6495ed;
+}
+window {
+    height: 100%;
+    width: 30em;
+    location: west;
+    border: 0px 2px 0px 0px;
+}
+listview { dynamic: false; lines: 0; }
+element selected normal { background-color: @blue; }
