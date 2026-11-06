@@ -47,6 +47,7 @@ public enum RasiDiagnosticCode: String, Equatable, Sendable {
     case missingReference
     case referenceCycle
     case approximation
+    case ignoredOption
 }
 
 public struct RasiDiagnostic: Equatable, Sendable {
