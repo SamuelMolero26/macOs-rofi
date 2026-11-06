@@ -111,8 +111,12 @@ does not provide `-theme`. Each repeatable `-theme-str` then merges into the
 current visual theme, in argument order.
 
 Direct command-line flags are the final authority. In the current port this
-notably means dmenu `-l` overrides resolved `lines`, and `-b` overrides resolved
-`location` with south/bottom-center placement. If `-location` is implemented as
+notably means `-l` overrides resolved `lines`, and `-b` overrides resolved
+`location` with south/bottom-center placement. Both flags apply to every panel
+mode, dmenu and `-show` alike, because they feed the one shared resolution.
+Matching upstream `source/modes/dmenu.c:575-588`, `-l 15` (the built-in
+default) counts as unset and does not override a resolved `lines`; a negative
+`-l` resolves to 0. If `-location` is implemented as
 a direct compatibility flag, it is more explicit than `-b` and wins when both
 are present. Colors, font, width, padding, and border are overridden from the
 command line through `-theme-str`; this ADR does not restore deprecated
@@ -137,7 +141,7 @@ The supported selector/property mapping is:
 | Rasi source | Resolved `PanelStyle` concept | AppKit effect |
 | --- | --- | --- |
 | `window` or `*` `background-color` | `backgroundColor` | `NSPanel.backgroundColor`; opacity follows alpha. |
-| `window` or `*` `text-color` | `textColor` | Default prompt, entry, message, switcher, and row foreground. |
+| `window` or `*` `text-color` | `textColor` | Default prompt, entry, message, and row foreground. Mode-switcher labels keep the system color because `NSSegmentedControl` exposes no label-color setting; the switcher takes the themed font only. |
 | `element normal` `background-color` / `text-color` | `rowBackgroundColor` / `rowTextColor` | Normal table-row fill and text. |
 | `element alternate normal` colors | `alternateRowBackgroundColor` / `alternateRowTextColor` | Alternating normal rows; absent values fall back to normal rows. |
 | `element selected normal` colors | `selectedBackgroundColor` / `selectedTextColor` | Selected normal row fill and text. |
