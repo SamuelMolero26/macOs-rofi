@@ -28,6 +28,17 @@ public struct Arguments: Sendable {
         bytes(key).map { String(decoding: $0, as: UTF8.self) }
     }
 
+    /// Values following every occurrence, preserving command-line order.
+    /// Occurrences in argv[0] and occurrences without a value are ignored.
+    public func strings(_ key: String) -> [String] {
+        rawArgv.indices.compactMap { index in
+            guard index > 0, index < rawArgv.count - 1,
+                asciiCaseInsensitiveEqual(rawArgv[index], key)
+            else { return nil }
+            return String(decoding: rawArgv[index + 1], as: UTF8.self)
+        }
+    }
+
     /// `find_arg_str` without decoding, for values used as C strings.
     public func bytes(_ key: String) -> [UInt8]? {
         guard let i = index(of: key), i > 0, i < rawArgv.count - 1 else { return nil }

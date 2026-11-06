@@ -3,9 +3,12 @@ import RofiCore
 /// Runs one `-show` interaction on the main actor until a mode answers
 /// `.exit`. `sidebar` adds the switcher row (`-sidebar-mode`,
 /// source/view.c:1667-1668); `icons` the icon column (`-show-icons`).
-@MainActor public func runModePanel(switcher: ModeSwitcher, sidebar: Bool, icons: Bool, keymap: Keymap) {
+/// `style` carries the resolved theme.
+@MainActor public func runModePanel(
+    switcher: ModeSwitcher, sidebar: Bool, icons: Bool, keymap: Keymap, style: PanelStyle = PanelStyle()
+) {
     let model = ModePanelModel(switcher: switcher)
-    var style = model.style(sidebar: sidebar)
+    var style = model.style(base: style, sidebar: sidebar)
     style.showIcons = icons
     runPanel(model: model, style: style, keymap: keymap, streaming: nil)
 }
@@ -20,11 +23,11 @@ import RofiCore
     }
 
     /// Button labels are read once, when the row is built (source/view.c:1798-1806).
-    func style(sidebar: Bool) -> PanelStyle {
-        PanelStyle(
-            accessibilityName: "Rofi",
-            switcherLabels: sidebar ? switcher.modes.indices.map(switcher.displayName(at:)) : nil
-        )
+    func style(base: PanelStyle = PanelStyle(), sidebar: Bool) -> PanelStyle {
+        var style = base
+        style.accessibilityName = "Rofi"
+        style.switcherLabels = sidebar ? switcher.modes.indices.map(switcher.displayName(at:)) : nil
+        return style
     }
 
     var query: String { switcher.query }

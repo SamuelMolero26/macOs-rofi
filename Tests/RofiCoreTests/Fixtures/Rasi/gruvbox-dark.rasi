@@ -1,0 +1,13 @@
+/*
+ * Derived from upstream rofi themes/gruvbox-dark.rasi.
+ * Pinned reference: rofi commit 1ad1df6b72d4c8b0e40e8ced1249ef8a8a6bc0ad.
+ * Original author: bardisty <b@bah.im>; source: https://github.com/bardisty/gruvbox-rofi
+ * Reduced to a parser compatibility fixture under rofi's MIT license.
+ */
+* {
+    background: #282828;
+    foreground: #ebdbb2;
+    border-color: #a89984;
+    background-color: @background;
+}
+@import "gruvbox-common"

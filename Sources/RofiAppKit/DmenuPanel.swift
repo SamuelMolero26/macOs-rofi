@@ -5,12 +5,14 @@ import os
 
 /// Runs one synchronous dmenu interaction on the main actor. With `input`,
 /// the panel opens at once and rows stream in from what `open` returns.
+/// `style` carries the resolved theme.
 @MainActor public func runDmenuPanel(
     session: DmenuSession,
+    style: PanelStyle = PanelStyle(),
     streaming input: (open: @Sendable () -> Int32, separator: UInt8)?
 ) -> DmenuCompletion {
     let model = DmenuPanelModel(session: session)
-    runPanel(model: model, style: model.style, keymap: session.pipeline.keymap, streaming: input)
+    runPanel(model: model, style: model.style(base: style), keymap: session.pipeline.keymap, streaming: input)
     guard let completion = model.completion else {
         preconditionFailure("dmenu panel stopped without a completion")
     }
@@ -66,8 +68,7 @@ import os
 
 @MainActor private final class PanelController: NSObject {
     private enum Layout {
-        static let panelSize = NSSize(width: 640, height: 420)
-        static let inset: CGFloat = 12
+        static let panelHeight: CGFloat = 420
         static let spacing: CGFloat = 8
     }
 
@@ -85,6 +86,10 @@ import os
 
     private let model: any PanelModel
     private let style: PanelStyle
+    /// The theme's width, padding and border in points for the main screen.
+    private let metrics: PanelMetrics
+    /// Content edges: border plus padding.
+    private let insets: NSEdgeInsets
     private let keymap: Keymap
     private let input: (open: @Sendable () -> Int32, separator: UInt8)?
     private let pendingInput = OSAllocatedUnfairLock(initialState: PendingInput())
@@ -128,6 +133,8 @@ import os
     ) {
         self.model = model
         self.style = style
+        metrics = PanelMetrics(style: style, visibleSize: NSScreen.main?.visibleFrame.size ?? .zero)
+        insets = metrics.contentInsets
         self.keymap = keymap
         self.input = input
         searchField = style.password ? NSSecureTextField() : NSSearchField()
@@ -135,7 +142,7 @@ import os
             NSSegmentedControl(labels: $0, trackingMode: .selectOne, target: nil, action: nil)
         }
         panel = DmenuPanel(
-            contentRect: NSRect(origin: .zero, size: Layout.panelSize),
+            contentRect: NSRect(origin: .zero, size: NSSize(width: metrics.width, height: Layout.panelHeight)),
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
@@ -155,12 +162,11 @@ import os
     func present() {
         panel.center()
         if let visibleFrame = panel.screen?.visibleFrame {
-            var origin = panel.frame.origin
-            // Upstream's `-b` is location 6, bottom center
-            // (source/modes/dmenu.c:601-603, source/xcb/view.c:275-278, 309-311, 327-330).
-            if style.atBottom {
-                origin = NSPoint(x: visibleFrame.midX - panel.frame.width / 2, y: visibleFrame.minY)
-            }
+            // Upstream's `-b` is location 6, bottom center, which resolves to
+            // `south` (source/modes/dmenu.c:601-603, source/xcb/view.c:275-278, 309-311, 327-330).
+            var origin =
+                panelOrigin(location: style.location, size: panel.frame.size, visibleFrame: visibleFrame)
+                ?? panel.frame.origin
             // A panel as tall as the screen must not slide under the menu bar.
             origin.y = min(origin.y, visibleFrame.maxY - panel.frame.height)
             panel.setFrameOrigin(origin)
@@ -209,8 +215,13 @@ import os
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.hasShadow = true
-        panel.isOpaque = true
-        panel.backgroundColor = .windowBackgroundColor
+        // A translucent theme background shows what is behind the panel.
+        panel.isOpaque = (style.backgroundColor?.alphaComponent ?? 1) >= 1
+        panel.backgroundColor = style.backgroundColor ?? .windowBackgroundColor
+        let border = metrics.border
+        if border.top > 0 || border.left > 0 || border.bottom > 0 || border.right > 0 {
+            panel.contentView = PanelBorderView(widths: border, color: style.borderColor ?? .separatorColor)
+        }
         updateTitle()
     }
 
@@ -223,6 +234,8 @@ import os
 
     /// A long prompt truncates instead of squeezing the input.
     private func configurePromptLabel() {
+        if let font = style.font { promptLabel.font = font }
+        if let color = style.textColor { promptLabel.textColor = color }
         promptLabel.lineBreakMode = .byTruncatingTail
         promptLabel.maximumNumberOfLines = 1
         promptLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -232,6 +245,8 @@ import os
 
     private func configureSearchField() {
         searchField.delegate = self
+        if let font = style.font { searchField.font = font }
+        if let color = style.textColor { searchField.textColor = color }
         searchField.stringValue = model.query
         searchField.setAccessibilityLabel("\(style.accessibilityName) search")
         searchField.translatesAutoresizingMaskIntoConstraints = false
@@ -241,7 +256,9 @@ import os
     /// below window-stay-put, so a message too tall for the panel is clipped.
     private func configureMessageLabel() {
         messageLabel.isSelectable = false
-        messageLabel.preferredMaxLayoutWidth = Layout.panelSize.width - 2 * Layout.inset
+        messageLabel.preferredMaxLayoutWidth = metrics.width - insets.left - insets.right
+        if let font = style.font { messageLabel.font = font }
+        if let color = style.textColor { messageLabel.textColor = color }
         messageLabel.setContentCompressionResistancePriority(
             NSLayoutConstraint.Priority(rawValue: 495),
             for: .vertical
@@ -262,15 +279,15 @@ import os
                 contentView.addSubview(messageLabel)
                 NSLayoutConstraint.activate([
                     messageLabel.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: Layout.spacing),
-                    messageLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: Layout.inset),
+                    messageLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: insets.left),
                     messageLabel.trailingAnchor.constraint(
-                        equalTo: contentView.trailingAnchor, constant: -Layout.inset),
+                        equalTo: contentView.trailingAnchor, constant: -insets.right),
                 ])
             }
             if let font = messageLabel.font, let markup = parsePangoMarkup(message) {
                 messageLabel.attributedStringValue = markup.attributedString(
                     font: font,
-                    color: .labelColor,
+                    color: style.textColor ?? .labelColor,
                     lineBreakMode: .byWordWrapping
                 )
             } else {
@@ -290,6 +307,9 @@ import os
         // The default inset style pads rows by an unexposed amount, which
         // would clip the last row of a panel sized by `-l`.
         tableView.style = .fullWidth
+        // A themed font sets the row height; a themed background shows through.
+        if let font = style.font { tableView.rowHeight = max(tableView.rowHeight, lineHeight(of: font) + 2) }
+        if style.backgroundColor != nil { tableView.backgroundColor = .clear }
         tableView.allowsMultipleSelection = false
         // Like upstream, a visible row stays selected, so Return is predictable.
         tableView.allowsEmptySelection = false
@@ -320,6 +340,7 @@ import os
         guard let switcherControl else { return }
         switcherControl.selectedSegment = model.currentMode ?? -1
         switcherControl.segmentDistribution = .fillEqually
+        if let font = style.font { switcherControl.font = font }
         switcherControl.refusesFirstResponder = true
         switcherControl.target = self
         switcherControl.action = #selector(switcherClicked(_:))
@@ -338,13 +359,13 @@ import os
         contentView.addSubview(loadingLabel)
         updateMessage()
         var resultsBottom = scrollView.bottomAnchor.constraint(
-            equalTo: contentView.bottomAnchor, constant: -Layout.inset)
+            equalTo: contentView.bottomAnchor, constant: -insets.bottom)
         if let switcherControl {
             contentView.addSubview(switcherControl)
             NSLayoutConstraint.activate([
-                switcherControl.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: Layout.inset),
-                switcherControl.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -Layout.inset),
-                switcherControl.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -Layout.inset),
+                switcherControl.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: insets.left),
+                switcherControl.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -insets.right),
+                switcherControl.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -insets.bottom),
             ])
             resultsBottom = scrollView.bottomAnchor.constraint(
                 equalTo: switcherControl.topAnchor, constant: -Layout.spacing)
@@ -354,21 +375,21 @@ import os
         // resistance (750), or a long prompt squeezes the label away.
         let searchFieldFullWidth = searchField.trailingAnchor.constraint(
             equalTo: contentView.trailingAnchor,
-            constant: -Layout.inset
+            constant: -insets.right
         )
         searchFieldFullWidth.priority = NSLayoutConstraint.Priority(700)
         searchFieldBesideLoading.isActive = !loadingLabel.isHidden
         NSLayoutConstraint.activate([
-            loadingLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -Layout.inset),
+            loadingLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -insets.right),
             loadingLabel.centerYAnchor.constraint(equalTo: searchField.centerYAnchor),
-            promptLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: Layout.inset),
+            promptLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: insets.left),
             promptLabel.centerYAnchor.constraint(equalTo: searchField.centerYAnchor),
-            searchField.topAnchor.constraint(equalTo: contentView.topAnchor, constant: Layout.inset),
+            searchField.topAnchor.constraint(equalTo: contentView.topAnchor, constant: insets.top),
             searchField.leadingAnchor.constraint(equalTo: promptLabel.trailingAnchor, constant: Layout.spacing),
             searchFieldFullWidth,
             searchField.widthAnchor.constraint(greaterThanOrEqualTo: contentView.widthAnchor, multiplier: 0.5),
-            scrollView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: Layout.inset),
-            scrollView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -Layout.inset),
+            scrollView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: insets.left),
+            scrollView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -insets.right),
             resultsBottom,
             scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: rows == 0 ? 0 : rowHeight),
         ])
@@ -383,14 +404,14 @@ import os
     /// `fixed_num_lines` (config/config.c:101), however few rows match.
     private func fitPanel(toRowsHeight rowsHeight: CGFloat) {
         guard let contentView = panel.contentView else { return }
-        let maximumHeight = panel.screen?.visibleFrame.height ?? Layout.panelSize.height
+        let maximumHeight = panel.screen?.visibleFrame.height ?? Layout.panelHeight
         // The cap also keeps a huge `-l` within Auto Layout's limits.
         let rowsConstraint = scrollView.heightAnchor.constraint(equalToConstant: min(rowsHeight, maximumHeight))
         rowsConstraint.priority = .dragThatCannotResizeWindow
         rowsConstraint.isActive = true
         panel.setContentSize(
             NSSize(
-                width: Layout.panelSize.width,
+                width: metrics.width,
                 height: min(contentView.fittingSize.height, maximumHeight)
             ))
     }
@@ -572,15 +593,39 @@ extension PanelController: NSTableViewDataSource, NSTableViewDelegate {
         let state = model.state(of: match)
         cell.textField?.stringValue = text
         cell.markup = style.markupRows || state.contains(.markup) ? parsePangoMarkup(text) : nil
-        // Active wins over urgent; the -multi-select `.selected` flag is not
-        // styled (include/widgets/textbox.h:122, source/widgets/textbox.c:312-315).
-        cell.stateColor = state.contains(.active) ? .systemBlue : state.contains(.urgent) ? .systemRed : .labelColor
+        let kind = rowKind(state)
+        let native: NSColor = kind == .active ? .systemBlue : kind == .urgent ? .systemRed : .labelColor
+        cell.stateColor = style.rowTextColor(kind: kind, variant: rowVariant(row)) ?? native
+        cell.selectedColor = style.rowTextColor(kind: kind, variant: .selected) ?? .alternateSelectedControlTextColor
         if let path = model.iconImagePath(for: match) {
             cell.imageView?.image = icon(forFile: path, asImage: true)
         } else {
             cell.imageView?.image = model.iconPath(for: match).map { icon(forFile: $0, asImage: false) }
         }
         return cell
+    }
+
+    /// Themed row fills; without them the row view draws natively.
+    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+        let kind = rowKind(model.state(of: model.matches[row]))
+        let fill = style.rowBackgroundColor(kind: kind, variant: rowVariant(row))
+        let selection = style.rowBackgroundColor(kind: kind, variant: .selected)
+        guard fill != nil || selection != nil else { return nil }
+        let rowView = PanelRowView()
+        rowView.fillColor = fill
+        rowView.selectionColor = selection
+        return rowView
+    }
+
+    /// Active wins over urgent; the -multi-select `.selected` flag is not
+    /// styled (include/widgets/textbox.h:122, source/widgets/textbox.c:312-315).
+    private func rowKind(_ state: DmenuRowState) -> PanelRowKind {
+        state.contains(.active) ? .active : state.contains(.urgent) ? .urgent : .normal
+    }
+
+    /// Upstream alternates from the second visible row.
+    private func rowVariant(_ row: Int) -> PanelRowVariant {
+        row % 2 == 1 ? .alternate : .plain
     }
 
     /// Only rows the table vends a cell for are looked up. Image icons are
@@ -605,6 +650,7 @@ extension PanelController: NSTableViewDataSource, NSTableViewDelegate {
         cell.identifier = Identifier.cell
 
         let label = NSTextField(labelWithString: "")
+        if let font = style.font { label.font = font }
         switch style.ellipsizeMode {
         case .start: label.lineBreakMode = .byTruncatingHead
         case .middle: label.lineBreakMode = .byTruncatingMiddle
@@ -695,11 +741,16 @@ extension Keymap {
     }
 }
 
-/// Draws a row's -a/-u color, except on the emphasized cursor row, where the
-/// system's highlighted text color keeps it readable on the accent fill.
+/// Draws a row's -a/-u or themed color, except on the emphasized cursor row,
+/// where `selectedColor` (the system's highlighted text color unless themed)
+/// keeps it readable on the selection fill.
 /// Markup colors win over the state color, but not over the highlight.
 private final class DmenuCell: NSTableCellView {
     var stateColor = NSColor.labelColor {
+        didSet { applyTextColor() }
+    }
+
+    var selectedColor = NSColor.alternateSelectedControlTextColor {
         didSet { applyTextColor() }
     }
 
@@ -717,7 +768,7 @@ private final class DmenuCell: NSTableCellView {
     private func applyTextColor() {
         guard let textField else { return }
         let highlighted = backgroundStyle == .emphasized
-        let color = highlighted ? .alternateSelectedControlTextColor : stateColor
+        let color = highlighted ? selectedColor : stateColor
         if let markup, let font = textField.font {
             textField.attributedStringValue = markup.attributedString(
                 font: font,
@@ -733,4 +784,45 @@ private final class DmenuCell: NSTableCellView {
 
 private final class DmenuTableView: NSTableView {
     override var acceptsFirstResponder: Bool { false }
+}
+
+/// A row with the theme's fill and selection colors, or the native ones.
+private final class PanelRowView: NSTableRowView {
+    var fillColor: NSColor?
+    var selectionColor: NSColor?
+
+    override func drawBackground(in dirtyRect: NSRect) {
+        guard let fillColor else { return super.drawBackground(in: dirtyRect) }
+        fillColor.setFill()
+        bounds.fill()
+    }
+
+    override func drawSelection(in dirtyRect: NSRect) {
+        guard let selectionColor else { return super.drawSelection(in: dirtyRect) }
+        selectionColor.setFill()
+        bounds.fill()
+    }
+}
+
+/// The panel's content view under a themed `border`: solid edges of their
+/// own widths, which a layer border cannot draw.
+private final class PanelBorderView: NSView {
+    private let widths: NSEdgeInsets
+    private let color: NSColor
+
+    init(widths: NSEdgeInsets, color: NSColor) {
+        self.widths = widths
+        self.color = color
+        super.init(frame: .zero)
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override func draw(_ dirtyRect: NSRect) {
+        color.setFill()
+        NSRect(x: 0, y: bounds.maxY - widths.top, width: bounds.width, height: widths.top).fill()
+        NSRect(x: 0, y: 0, width: bounds.width, height: widths.bottom).fill()
+        NSRect(x: 0, y: 0, width: widths.left, height: bounds.height).fill()
+        NSRect(x: bounds.maxX - widths.right, y: 0, width: widths.right, height: bounds.height).fill()
+    }
 }
