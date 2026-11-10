@@ -23,18 +23,18 @@ public enum SortingMethod: String, Equatable, Sendable {
     case levenshtein
     case fzf
 
+    /// helper.c:676-693: names compare exactly and `normal` aliases levenshtein.
+    /// ponytail: `fzf-v2` is out of scope (issue #70), so it is rejected.
     init(arguments args: Arguments) throws {
-        guard let value = args.string("-sorting-method") else {
-            self = .levenshtein
-            return
-        }
-        guard let method = Self(rawValue: value.lowercased()) else {
+        switch args.string("-sorting-method") {
+        case nil, "normal", "levenshtein": self = .levenshtein
+        case "fzf": self = .fzf
+        case let value?:
             throw InvalidMatchingConfiguration(errors: [
-                "\tconfig.sorting_method=\(value) is not a valid sorting method.\n"
-                    + "Valid options are: levenshtein or fzf.\n"
+                "\tconfig.sorting_method=\(value) is not a valid sorting strategy.\n"
+                    + "Valid options are: normal or fzf.\n"
             ])
         }
-        self = method
     }
 }
 

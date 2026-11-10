@@ -40,13 +40,17 @@ import Testing
     }
 
     @Test func fzfSortingMethodIsAcceptedAndUnknownMethodsAreRejected() throws {
-        let fzf = try pipeline(["-sort", "-sorting-method", "FZF", "-matching", "fuzzy"])
+        let fzf = try pipeline(["-sort", "-sorting-method", "fzf", "-matching", "fuzzy"])
         let rows = ["firefox", "fire-fox"].map { Row(parsing: $0) }
 
         #expect(fzf.sortingMethod == .fzf)
         #expect(fzf.matchingRows(in: rows, query: "ff").map(\.sourceIndex) == [1, 0])
-        #expect(throws: InvalidMatchingConfiguration.self) {
-            try pipeline(["-sorting-method", "fzf-v2"])
+        // helper.c:676-693: `normal` aliases levenshtein; names compare exactly.
+        #expect(try pipeline(["-sorting-method", "normal"]).sortingMethod == .levenshtein)
+        for bad in ["fzf-v2", "FZF"] {
+            #expect(throws: InvalidMatchingConfiguration.self) {
+                try pipeline(["-sorting-method", bad])
+            }
         }
     }
 
