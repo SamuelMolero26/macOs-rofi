@@ -50,21 +50,14 @@ public final class ScriptMode: Mode {
         switchMode = nil
     }
 
-    /// `script_token_match` (script.c:515-554): a permanent row always
-    /// matches; a token the text misses is retried on meta. Under
-    /// markup-rows the text is the markup's, and invalid markup never matches.
+    /// `script_token_match` (script.c:515-554), as `Row.matches` describes.
     public func matches(_ row: Row, matcher: Matcher) -> Bool {
-        guard !row.permanent else { return true }
-        guard let text = markupRows ? stripPangoMarkup(row.text) : row.text else { return false }
-        return matcher.matches(text, meta: row.meta)
+        row.matches(matcher, markup: markupRows)
     }
 
-    /// `\0icon` (script.c:100-101): the first entry of the comma list that is
-    /// an absolute path on disk.
-    /// ponytail: theme icon names (`firefox`) are not looked up (#73).
+    /// `\0icon` (script.c:100-101), as `Row.iconImagePath` describes.
     public func iconImagePath(at row: Int) -> String? {
-        guard rows.indices.contains(row) else { return nil }
-        return rows[row].icons.first { $0.hasPrefix("/") && FileManager.default.fileExists(atPath: $0) }
+        rows.indices.contains(row) ? rows[row].iconImagePath : nil
     }
 
     /// `script_mode_result` (script.c:370-454).

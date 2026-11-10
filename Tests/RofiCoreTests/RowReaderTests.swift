@@ -70,7 +70,7 @@ import os
         var events = reader.events.makeAsyncIterator()
 
         // One pipe write arrives in one read, so "par" has reached the splitter
-        // by the time "a" is delivered.
+        // by the time "a" is delivered; the rest follows well within 250 ms.
         reader.send("a\npar")
         let first = await events.next()
         #expect(first == .rows(["a"]))
@@ -159,18 +159,21 @@ import os
         close(readEnd)
     }
 
-    // Divergence from rofi's 250 ms flush (source/modes/dmenu.c:275). The one
-    // real wait in this suite: a correct reader delivers nothing during it.
-    @Test func aPartialLineIsNotFlushedOnATimeout() async throws {
+    // rofi flushes a partial line after 250 ms, so a slow line becomes two
+    // rows (source/modes/dmenu.c:275, 333-346). The one real wait in this
+    // suite, generously longer than the flush.
+    @Test func aPartialLineIsFlushedAfterAQuarterSecond() async throws {
         let reader = startReader()
         var events = reader.events.makeAsyncIterator()
 
         reader.send("par")
-        try await Task.sleep(for: .milliseconds(400))
+        try await Task.sleep(for: .seconds(1))
         reader.send("tial\n")
 
         let first = await events.next()
-        #expect(first == .rows(["partial"]))
+        #expect(first == .rows(["par"]))
+        let second = await events.next()
+        #expect(second == .rows(["tial"]))
         close(reader.writeEnd)
         let last = await events.next()
         #expect(last == .end)

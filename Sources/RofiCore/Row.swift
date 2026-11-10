@@ -1,3 +1,5 @@
+import Foundation
+
 /// One dmenu or script row: the text before the first NUL, then
 /// `key\x1fvalue` pairs up to the next NUL. Mirrors rofi's
 /// `dmenuscript_parse_entry_extras` (source/modes/script.c:89-131).
@@ -45,5 +47,22 @@ public struct Row: Equatable, Sendable {
             default: break
             }
         }
+    }
+
+    /// `\0icon` (source/modes/script.c:100-101): the first entry of the comma
+    /// list that is an absolute path on disk.
+    /// ponytail: theme icon names (`firefox`) are not looked up (#73).
+    public var iconImagePath: String? {
+        icons.first { $0.hasPrefix("/") && FileManager.default.fileExists(atPath: $0) }
+    }
+
+    /// `dmenu_token_match` and `script_token_match` (source/modes/dmenu.c:668-708,
+    /// source/modes/script.c:515-554): a permanent row always matches, before
+    /// its markup is parsed; a token the text misses is retried on meta. Under
+    /// `markup` the text is the markup's, and invalid markup never matches.
+    public func matches(_ matcher: Matcher, markup: Bool) -> Bool {
+        guard !permanent else { return true }
+        guard let text = markup ? stripPangoMarkup(text) : text else { return false }
+        return matcher.matches(text, meta: meta)
     }
 }

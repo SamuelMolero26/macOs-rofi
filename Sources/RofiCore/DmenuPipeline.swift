@@ -82,6 +82,9 @@ public struct DmenuPipeline: Sendable {
     public var ellipsizeMode = EllipsizeMode.end
     /// Upstream's key bindings with the `-kb-*` options applied.
     public var keymap = Keymap()
+    /// `-show-icons` (source/xrmoptions.c:145): the `\0icon` column. Off by
+    /// default as upstream (config/config.c:47), unlike `-show`'s launcher.
+    public var showIcons = false
 
     /// The window title around `prompt` (source/view.c:1892-1894).
     public var windowTitle: String { "rofi - \(prompt)" }
@@ -151,6 +154,7 @@ public struct DmenuPipeline: Sendable {
         }
         markupRows = args.has("-markup-rows")
         password = args.has("-password")
+        showIcons = args.bool("show-icons", default: showIcons)
         // `-ellipsize-mode` is applied after `-keep-right`, and an unknown mode
         // keeps the previous one (source/modes/dmenu.c:1039-1055).
         // ponytail: rofi g_warning()s an unknown mode; it is dropped here.
@@ -196,18 +200,17 @@ public struct DmenuPipeline: Sendable {
         return selectedRow
     }
 
-    /// Interactive matching, retaining each row's original input position.
-    /// Under `-markup-rows` a row matches on its markup's text, and a row
-    /// whose markup is invalid never matches (source/modes/dmenu.c:668-708).
+    /// Interactive matching, retaining each row's original input position:
+    /// `dmenu_token_match` (source/modes/dmenu.c:668-708), which also keeps
+    /// permanent rows and retries meta, as `Row.matches` describes.
     public func matchingRows(in rows: [Row], query: String) -> [DmenuMatch] {
-        matchingRows(in: rows, query: query, text: markupRows ? { stripPangoMarkup($0.text) } : \.text)
+        matchingRows(in: rows, query: query) { $1.matches($0, markup: markupRows) }
     }
 
-    private func matchingRows(in rows: [Row], query: String, text: (Row) -> String?) -> [DmenuMatch] {
+    private func matchingRows(in rows: [Row], query: String, where test: (Matcher, Row) -> Bool) -> [DmenuMatch] {
         let matcher = Matcher(query: query, options: match)
         return rows.enumerated().compactMap { sourceIndex, row in
-            guard let text = text(row), matcher.matches(text) else { return nil }
-            return DmenuMatch(sourceIndex: sourceIndex, row: row)
+            test(matcher, row) ? DmenuMatch(sourceIndex: sourceIndex, row: row) : nil
         }
     }
 
@@ -240,12 +243,12 @@ public struct DmenuPipeline: Sendable {
     /// The no-UI `rofi -dmenu -dump` projection, one output line per match
     /// (source/modes/dmenu.c:989-1034). Command-line shortcuts resolve first,
     /// exactly as they do for the interactive path. Rows match on their raw
-    /// text, even under `-markup-rows`.
+    /// text only, even under `-markup-rows`, ignoring meta and permanent.
     public func dump(rows: [Row]) -> [String] {
         if let completion = shortcut(rows: rows) {
             return completion.output.map { [$0] } ?? []
         }
-        return matchingRows(in: rows, query: filter ?? "", text: \.text)
+        return matchingRows(in: rows, query: filter ?? "") { $0.matches($1.text) }
             .map { formattedOutput(for: $0, filter: filter) }
     }
 
@@ -356,9 +359,9 @@ public func readRows(fileDescriptor fd: Int32, separator: UInt8) -> [Row] {
 
 /// Opens and reads the input on a background thread, calling `onRows` from it
 /// with each non-empty batch, then `onEnd` once at end of input. Returns
-/// without waiting for `open`, which blocks on a FIFO with no writer.
-// ponytail: a partial line waits for its separator or EOF; rofi flushes it
-// after 250 ms (source/modes/dmenu.c:275), which splits slow lines.
+/// without waiting for `open`, which blocks on a FIFO with no writer. A
+/// partial line still waiting after 250 ms becomes a row, so a slow line is
+/// split in two (source/modes/dmenu.c:273-275, 333-346).
 public func streamRows(
     open: @escaping @Sendable () -> Int32,
     separator: UInt8,
@@ -366,18 +369,39 @@ public func streamRows(
     onEnd: @escaping @Sendable () -> Void
 ) {
     Thread.detachNewThread {
-        readRowBatches(fileDescriptor: open(), separator: separator, onRows)
+        let quarterSecond = timeval(tv_sec: 0, tv_usec: 250_000)
+        readRowBatches(fileDescriptor: open(), separator: separator, flushAfter: quarterSecond, onRows)
         onEnd()
     }
 }
 
 /// The read loop behind `readRows` and `streamRows`: hands over each read's
-/// completed rows, then the unterminated remainder at end of input.
-// ponytail: a read error other than EINTR ends the input silently.
-func readRowBatches(fileDescriptor fd: Int32, separator: UInt8, _ onRows: ([Row]) -> Void) {
+/// completed rows, then the unterminated remainder at end of input. With
+/// `flushAfter`, the remainder is also handed over whenever no input arrives
+/// for that long; without it, as in `read_input_sync`, it waits for EOF.
+// ponytail: a read or select error other than EINTR ends the input silently,
+// and an fd at or above FD_SETSIZE is not supported (stdin, a file or a FIFO
+// opened at startup never is).
+func readRowBatches(
+    fileDescriptor fd: Int32, separator: UInt8, flushAfter timeout: timeval? = nil, _ onRows: ([Row]) -> Void
+) {
     var splitter = RowSplitter(separator: separator)
     var buffer = [UInt8](repeating: 0, count: 64 * 1024)
     while true {
+        // select(), as upstream, not poll(): macOS poll() never reports EOF on
+        // a FIFO whose writer closed, so the loop would spin forever. A failed
+        // open (-1) skips the wait; its read fails and ends the input.
+        if var wait = timeout, fd >= 0 {
+            var set = fd_set()
+            __darwin_fd_set(fd, &set)
+            let ready = select(fd + 1, &set, nil, nil, &wait)
+            if ready < 0 && errno == EINTR { continue }
+            if ready < 0 { break }
+            if ready == 0 {
+                if let partial = splitter.finish() { onRows([partial]) }
+                continue
+            }
+        }
         let count = buffer.withUnsafeMutableBytes { read(fd, $0.baseAddress, $0.count) }
         if count < 0 && errno == EINTR { continue }
         if count <= 0 { break }
