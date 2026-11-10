@@ -75,7 +75,15 @@ func reportFailedModes(_ modes: [any Mode]) -> Bool {
     let applicationCatalog = NativeApplicationCatalog()
     let modes = makeModes(
         options.modes, applications: applicationCatalog.applications,
-        launcher: applicationCatalog.launch)
+        launcher: applicationCatalog.launch,
+        // get_apps reads $PATH when the mode is built (source/modes/run.c:251, 273).
+        executables: {
+            discoverExecutables(
+                path: ProcessInfo.processInfo.environment["PATH"],
+                home: ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory(),
+                list: listDirectoryOnDisk)
+        },
+        commandLauncher: launchWithProcess, scriptWriter: writeTemporaryScript)
     // run_mode_index: a script that cannot start shows an error dialog in
     // place of the view (source/rofi.c:201-216, source/modes/script.c:242-246).
     if reportFailedModes(modes) { exit(EXIT_SUCCESS) }

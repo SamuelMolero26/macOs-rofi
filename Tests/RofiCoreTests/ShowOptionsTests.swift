@@ -153,19 +153,19 @@ private final class ConfigFixture {
     // `+` on the enabled ones.
     @Test func unknownOrBuiltinNameIsNotFound_rofi_c_546() {
         #expect(
-            errors(["-modes", "a:x,run"]) == [
-                "Mode run is not found.\nThe following modes are known:\n        * drun\n        * filebrowser\n        * +a\n"
+            errors(["-modes", "a:x,ssh"]) == [
+                "Mode ssh is not found.\nThe following modes are known:\n        * run\n        * drun\n        * filebrowser\n        * +a\n"
             ])
     }
 
     // source/rofi.c:832-835, 885-888: every bad token is collected, and setup
     // errors win over `-show`.
     @Test func everyBadTokenIsCollected_rofi_c_885() throws {
-        let errors = errors(["-modes", "run,drun,ssh", "-show", "a:x"])
+        let errors = errors(["-modes", "ssh,drun,keys", "-show", "a:x"])
         #expect(
             errors == [
-                "Mode run is not found.\nThe following modes are known:\n        * drun\n        * filebrowser\n",
-                "Mode ssh is not found.\nThe following modes are known:\n        * +drun\n        * filebrowser\n",
+                "Mode ssh is not found.\nThe following modes are known:\n        * run\n        * drun\n        * filebrowser\n",
+                "Mode keys is not found.\nThe following modes are known:\n        * run\n        * +drun\n        * filebrowser\n",
             ])
     }
 
@@ -175,8 +175,8 @@ private final class ConfigFixture {
         let matching = try #require(errors(["-matching", "bogus"]).first)
         #expect(matching.hasPrefix("The configuration failed to validate:\n\tconfig.matching=bogus"))
         #expect(
-            errors(["-modes", "run", "-matching", "bogus", "-show", "nope"]) == [
-                "Mode run is not found.\nThe following modes are known:\n        * drun\n        * filebrowser\n",
+            errors(["-modes", "ssh", "-matching", "bogus", "-show", "nope"]) == [
+                "Mode ssh is not found.\nThe following modes are known:\n        * run\n        * drun\n        * filebrowser\n",
                 matching,
             ])
         #expect(errors(["-modes", "a:x", "-matching", "bogus", "-show", "nope"]) == [matching])
@@ -190,8 +190,8 @@ private final class ConfigFixture {
         let binding = try #require(errors(["-kb-custom-2", "Alt+bogus"]).first)
         #expect(binding.hasPrefix("Failed to set binding Alt+bogus for: Custom keybinding 2 (kb-custom-2)"))
         #expect(
-            errors(["-modes", "run", "-matching", "bogus", "-kb-custom-2", "Alt+bogus"]) == [
-                "Mode run is not found.\nThe following modes are known:\n        * drun\n        * filebrowser\n",
+            errors(["-modes", "ssh", "-matching", "bogus", "-kb-custom-2", "Alt+bogus"]) == [
+                "Mode ssh is not found.\nThe following modes are known:\n        * run\n        * drun\n        * filebrowser\n",
                 binding,
                 matching,
             ])
@@ -221,6 +221,7 @@ private final class ConfigFixture {
                     • a
 
                 The following modes can be enabled:
+                    • run
                     • drun
                     • filebrowser
 
@@ -284,8 +285,8 @@ private final class ConfigFixture {
     // source/rofi.c:946-950: an unknown `-show` name is an error.
     @Test func showUnknownNameIsAnError_rofi_c_946() {
         #expect(
-            errors(["-modes", "a:x", "-show", "run"]) == [
-                "Mode run is not found.\nThe following modes are known:\n        * drun\n        * filebrowser\n        * +a\n"
+            errors(["-modes", "a:x", "-show", "ssh"]) == [
+                "Mode ssh is not found.\nThe following modes are known:\n        * run\n        * drun\n        * filebrowser\n        * +a\n"
             ])
     }
 
@@ -401,13 +402,14 @@ private final class ConfigFixture {
     // its `+` and is no longer offered as one that can be enabled.
     @Test func enabledFilebrowserIsMarkedAndNotOffered_rofi_c_547() throws {
         #expect(
-            errors(["-modes", "filebrowser,run"]) == [
-                "Mode run is not found.\nThe following modes are known:\n        * drun\n        * +filebrowser\n"
+            errors(["-modes", "filebrowser,ssh"]) == [
+                "Mode ssh is not found.\nThe following modes are known:\n        * run\n        * drun\n        * +filebrowser\n"
             ])
         let unsure = try parse(["-modes", "filebrowser"]).unsureWhatToShow
         #expect(
             unsure.contains(
-                "enabled:\n    • filebrowser\n\nThe following modes can be enabled:\n    • drun\n\nTo activate"))
+                "enabled:\n    • filebrowser\n\nThe following modes can be enabled:\n    • run\n    • drun\n\nTo activate"
+            ))
     }
 
     // source/rofi.c:732-739: drun is a built-in, registered before
@@ -418,7 +420,7 @@ private final class ConfigFixture {
         #expect(options.modes.map(\.name) == ["drun", "filebrowser"])
         #expect(options.startIndex == 0)
         #expect(options.warnings.isEmpty)
-        #expect(options.availableModes.map(\.name) == ["drun", "filebrowser"])
+        #expect(options.availableModes.map(\.name) == ["run", "drun", "filebrowser"])
     }
 
     // source/modes/drun.c:883-893, source/rofi.c:1227-1231: the history
@@ -434,5 +436,57 @@ private final class ConfigFixture {
                 .drun(historyPath: home + "/c/rofi3.druncache")
             ])
         #expect(try parse(["-modes", "drun", "-disable-history"]).modes == [.drun(historyPath: nil)])
+    }
+
+    // MARK: run (source/modes/run.c:64, config/config.c:65-74)
+
+    private var runHistory: String {
+        if let xdg = getenv("XDG_CACHE_HOME"), xdg.pointee != 0 { return String(cString: xdg) + "/rofi-4.runcache" }
+        return home + "/.cache/rofi-4.runcache"
+    }
+
+    private let defaultRun = ModeSpec.run(
+        historyPath: nil, terminal: nil, runCommand: "{cmd}", runShellCommand: "{terminal} -e {cmd}")
+
+    // source/rofi.c:732-739: run is a built-in, registered before drun, and
+    // keeps its own cache file next to drun's.
+    @Test func runIsABuiltinWithItsOwnHistoryFile_run_c_64() throws {
+        let options = try parse(["-modes", "run,drun"])
+        #expect(
+            options.modes == [
+                .run(
+                    historyPath: runHistory, terminal: nil, runCommand: "{cmd}",
+                    runShellCommand: "{terminal} -e {cmd}"),
+                .drun(historyPath: defaultHistory),
+            ])
+        #expect(options.modes.map(\.name) == ["run", "drun"])
+    }
+
+    // source/rofi.c:935-945: `-show run` enables it, with the usual warning;
+    // the default mode list is unchanged.
+    @Test func showRunStartsRunAndWarns_rofi_c_935() throws {
+        let options = try parse(["-show", "run"])
+        #expect(options.modes.map(\.name) == ["drun", "filebrowser", "run"])
+        #expect(options.startIndex == 2)
+        #expect(options.warnings.count == 1)
+    }
+
+    // config/config.c:65-74, source/xrmoptions.c: the three command options.
+    @Test func runReadsItsCommandOptions_config_c_65() throws {
+        let options = try parse([
+            "-modes", "run", "-terminal", "ghostty", "-run-command", "env {cmd}", "-run-shell-command",
+            "{terminal} --hold {cmd}", "-cache-dir", "/tmp/c",
+        ])
+        #expect(
+            options.modes == [
+                .run(
+                    historyPath: "/tmp/c/rofi-4.runcache", terminal: "ghostty", runCommand: "env {cmd}",
+                    runShellCommand: "{terminal} --hold {cmd}")
+            ])
+    }
+
+    // config/config.c:103: no history path at all.
+    @Test func disableHistoryDropsTheRunHistory_config_c_103() throws {
+        #expect(try parse(["-modes", "run", "-disable-history"]).modes == [defaultRun])
     }
 }
