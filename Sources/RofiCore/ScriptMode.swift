@@ -238,7 +238,7 @@ public func makeModes(
 }
 
 /// A failure worded as the GError rofi prints.
-private struct SpawnError: Error {
+struct SpawnError: Error {
     let message: String
 }
 
@@ -249,7 +249,7 @@ private func cString(_ bytes: ArraySlice<UInt8>) -> ArraySlice<UInt8> {
 
 /// `g_shell_parse_argv`: words split on blanks, with single quotes,
 /// double quotes, backslash escapes and `#` comments, and no expansions.
-private func shellParseArgv(_ text: String) throws(SpawnError) -> [String] {
+func shellParseArgv(_ text: String) throws(SpawnError) -> [String] {
     var words: [String] = []
     var word: String?
     var chars = text[...]
