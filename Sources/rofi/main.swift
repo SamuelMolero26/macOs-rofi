@@ -79,7 +79,9 @@ func reportFailedModes(_ modes: [any Mode]) -> Bool {
     // run_mode_index: a script that cannot start shows an error dialog in
     // place of the view (source/rofi.c:201-216, source/modes/script.c:242-246).
     if reportFailedModes(modes) { exit(EXIT_SUCCESS) }
-    let switcher = ModeSwitcher(modes: modes, displayNames: options.displayNames, start: start, match: options.match)
+    let switcher = ModeSwitcher(
+        modes: modes, displayNames: options.displayNames, start: start, match: options.match,
+        sort: options.sort, sortingMethod: options.sortingMethod, cycle: options.cycle)
     runModePanel(
         switcher: switcher, sidebar: options.sidebarMode, icons: options.showIcons, keymap: options.keymap,
         style: style)

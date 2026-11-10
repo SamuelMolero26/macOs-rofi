@@ -342,6 +342,17 @@ private final class ConfigFixture {
             try !DmenuPipeline(arguments: Arguments(["rofi", "-dmenu", "-case-sensitive", "-i"])).match.caseSensitive)
     }
 
+    @Test func showSortingOptionsAreParsedAndValidated() throws {
+        let options = try parse(["-sort", "-sorting-method", "fzf"])
+
+        #expect(options.sort)
+        #expect(options.sortingMethod == .fzf)
+        #expect(try !parse(["-no-sort"]).sort)
+        #expect(try parse([]).cycle)
+        #expect(try !parse(["-no-cycle"]).cycle)
+        #expect(errors(["-sorting-method", "fzf-v2"]).first?.contains("fzf-v2") == true)
+    }
+
     // source/modes/filebrowser.c:729: `filebrowser` is a built-in mode name,
     // so `-show` enables an unlisted one with the usual warning.
     @Test func showResolvesTheFilebrowserBuiltin_filebrowser_c_729() throws {

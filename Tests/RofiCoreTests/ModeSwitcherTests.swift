@@ -12,6 +12,7 @@ private final class FakeMode: Mode {
     var answer: ModeResult = .exit
     var rewrite: String?? = .none
     var onResult: () -> Void = {}
+    var completions: [String]?
     private(set) var calls: [(action: MenuAction, input: String?, selectedRow: Int?)] = []
 
     init(_ name: String, _ rows: [String], message: String? = nil) {
@@ -25,6 +26,10 @@ private final class FakeMode: Mode {
         if case .some(let value) = rewrite { input = value }
         onResult()
         return answer
+    }
+
+    func completion(at row: Int) -> String {
+        completions?[row] ?? rows[row].text
     }
 }
 
@@ -270,6 +275,16 @@ private final class FakeMode: Mode {
         #expect(s.matches.map(\.sourceIndex) == [0, 1, 2])
     }
 
+    @Test func sortingUsesModeCompletionTextAndKeepsEmptyQueryOrder() {
+        a.rows = [Row(parsing: "foo first"), Row(parsing: "foo second")]
+        a.completions = ["food", "foo"]
+        var s = ModeSwitcher(modes: [a], sort: true, sortingMethod: .levenshtein)
+
+        #expect(s.matches.map(\.sourceIndex) == [0, 1])
+        s.updateQuery("foo")
+        #expect(s.matches.map(\.sourceIndex) == [1, 0])
+    }
+
     // source/mode.c:199-202, source/modes/script.c:161-164: a mode's own
     // display name (a script's prompt header) beats -display-<name>.
     @Test func modeDisplayNameOverridesTheConfiguredOne_mode_c_199() {
@@ -307,8 +322,16 @@ private final class FakeMode: Mode {
 
     // kb-row-up/kb-row-down move the visible selection, clamped at the ends
     // like the dmenu panel (DmenuSession.moveSelection).
-    @Test func moveSelectionClampsToTheVisibleRows() {
+    @Test func moveSelectionWrapsSingleStepsByDefault() {
         var s = switcher()
+        s.moveSelection(by: -1)
+        #expect(s.selectedVisibleIndex == 2)
+        s.moveSelection(by: 1)
+        #expect(s.selectedVisibleIndex == 0)
+    }
+
+    @Test func moveSelectionClampsToTheVisibleRows() {
+        var s = ModeSwitcher(modes: [a, b, c], cycle: false)
         s.moveSelection(by: 1)
         #expect(s.selectedVisibleIndex == 1)
         s.moveSelection(by: 5)

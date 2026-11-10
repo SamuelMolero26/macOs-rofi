@@ -93,17 +93,18 @@ public struct DmenuSession: Sendable {
         return autoSelectCompletion()
     }
 
-    /// Adds rows that arrived after the session started. New matches go last,
-    /// so visible indices and the selection stay valid.
+    /// Adds rows that arrived after the session started. The complete set is
+    /// refiltered so sorted sessions can place a new row before an old one.
     public mutating func appendRows(_ newRows: [Row]) {
-        let offset = rows.count
+        let selectedSourceIndex = selectedVisibleIndex.flatMap {
+            matches.indices.contains($0) ? matches[$0].sourceIndex : nil
+        }
         rows += newRows
-        matches += pipeline.matchingRows(in: newRows, query: query).map {
-            DmenuMatch(sourceIndex: offset + $0.sourceIndex, row: $0.row)
-        }
-        if selectedVisibleIndex == nil && !matches.isEmpty {
-            selectedVisibleIndex = 0
-        }
+        matches = pipeline.matchingRows(in: rows, query: query)
+        selectedVisibleIndex =
+            selectedSourceIndex.flatMap { source in
+                matches.firstIndex { $0.sourceIndex == source }
+            } ?? (matches.isEmpty ? nil : 0)
     }
 
     public mutating func selectVisibleIndex(_ index: Int?) {
@@ -116,7 +117,10 @@ public struct DmenuSession: Sendable {
 
     public mutating func moveSelection(by offset: Int) {
         guard let current = selectedVisibleIndex, !matches.isEmpty else { return }
-        if offset > matches.index(before: matches.endIndex) - current {
+        // Single steps wrap unless `-no-cycle`; larger jumps always clamp.
+        if pipeline.cycle, abs(offset) == 1 {
+            selectedVisibleIndex = (current + offset + matches.count) % matches.count
+        } else if offset > matches.index(before: matches.endIndex) - current {
             selectedVisibleIndex = matches.index(before: matches.endIndex)
         } else if offset < -current {
             selectedVisibleIndex = matches.startIndex

@@ -36,6 +36,9 @@ public struct DmenuPipeline: Sendable {
     public var separator: UInt8 = 0x0A
     public var filter: String?
     public var match = MatchOptions()
+    public var sort = false
+    public var sortingMethod = SortingMethod.levenshtein
+    public var cycle = true
     public var autoSelect = false
     /// Disables custom input and keeps the session open on cancellation.
     public var onlyMatch = false
@@ -107,6 +110,9 @@ public struct DmenuPipeline: Sendable {
         separator = args.char("-sep") ?? separator
         filter = args.string("-filter")
         match = try MatchOptions(arguments: args)
+        sort = args.bool("sort", default: sort)
+        cycle = args.bool("cycle", default: cycle)
+        sortingMethod = try SortingMethod(arguments: args)
         // dmenu forces case sensitivity on unless `-i`, whatever
         // `-case-sensitive` said (source/modes/dmenu.c:605-608).
         match.caseSensitive = !args.has("-i")
@@ -204,7 +210,11 @@ public struct DmenuPipeline: Sendable {
     /// `dmenu_token_match` (source/modes/dmenu.c:668-708), which also keeps
     /// permanent rows and retries meta, as `Row.matches` describes.
     public func matchingRows(in rows: [Row], query: String) -> [DmenuMatch] {
-        matchingRows(in: rows, query: query) { $1.matches($0, markup: markupRows) }
+        let matches = matchingRows(in: rows, query: query) { $1.matches($0, markup: markupRows) }
+        guard sort else { return matches }
+        return sortedByScore(matches, query: query, match: match, method: sortingMethod) {
+            displayString(for: $0.row)
+        }
     }
 
     private func matchingRows(in rows: [Row], query: String, where test: (Matcher, Row) -> Bool) -> [DmenuMatch] {

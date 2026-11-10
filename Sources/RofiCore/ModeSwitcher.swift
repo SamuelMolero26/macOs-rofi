@@ -17,6 +17,9 @@ public struct ModeSwitcher {
     /// unless configured (config/config.c:108-130, source/helper.c:1672-1691);
     /// only dmenu forces case sensitivity (source/modes/dmenu.c:605-608).
     public let match: MatchOptions
+    public let sort: Bool
+    public let sortingMethod: SortingMethod
+    public let cycle: Bool
 
     /// `displayNames` defaults to the mode names. `modes` must not be empty.
     public init(
@@ -24,12 +27,18 @@ public struct ModeSwitcher {
         displayNames: [String]? = nil,
         start: Int = 0,
         query: String = "",
-        match: MatchOptions = MatchOptions()
+        match: MatchOptions = MatchOptions(),
+        sort: Bool = false,
+        sortingMethod: SortingMethod = .levenshtein,
+        cycle: Bool = true
     ) {
         precondition(!modes.isEmpty, "a switcher needs a mode")
         self.modes = modes
         self.displayNames = displayNames ?? modes.map(\.name)
         self.match = match
+        self.sort = sort
+        self.sortingMethod = sortingMethod
+        self.cycle = cycle
         self.query = query
         currentIndex = start
         selectedVisibleIndex = 0
@@ -59,11 +68,16 @@ public struct ModeSwitcher {
         selectedVisibleIndex = index.flatMap { matches.indices.contains($0) ? $0 : nil }
     }
 
-    /// kb-row-up/kb-row-down, clamped at the ends like the dmenu panel.
-    /// ponytail: upstream cycles at the ends (`cycle`, config/config.c:115).
+    /// kb-row-up/kb-row-down. Single steps wrap past the ends unless `-no-cycle`
+    /// (`cycle`, config/config.c:115); larger jumps always clamp.
     public mutating func moveSelection(by offset: Int) {
         guard let current = selectedVisibleIndex else { return }
-        selectedVisibleIndex = min(max(current + offset, 0), matches.count - 1)
+        let target = current + offset
+        if cycle, abs(offset) == 1, !matches.isEmpty {
+            selectedVisibleIndex = (target + matches.count) % matches.count
+        } else {
+            selectedVisibleIndex = min(max(target, 0), matches.count - 1)
+        }
     }
 
     /// kb-mode-next (source/view.c:1122-1126, source/rofi.c:262-263).
@@ -176,13 +190,17 @@ public struct ModeSwitcher {
     /// (source/view.c:829-917). The visible selection is kept, clamped to the
     /// new matches (source/widgets/listview.c:614-623, 651-656).
     ///
-    /// ponytail: no sorting; `-sort` is off by default (config/config.c).
     private mutating func refilter() {
         let mode = current
         let rows = mode.rows
         let matcher = Matcher(query: query, options: match)
         matches = rows.enumerated().compactMap { index, row in
             query.isEmpty || mode.matches(row, matcher: matcher) ? DmenuMatch(sourceIndex: index, row: row) : nil
+        }
+        if sort {
+            matches = sortedByScore(matches, query: query, match: match, method: sortingMethod) {
+                mode.completion(at: $0.sourceIndex)
+            }
         }
         selectedVisibleIndex = matches.isEmpty ? nil : min(selectedVisibleIndex ?? 0, matches.count - 1)
     }

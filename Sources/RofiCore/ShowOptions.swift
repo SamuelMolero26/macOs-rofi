@@ -77,6 +77,9 @@ public struct ShowOptions: Sendable {
     /// Printed on stderr only when stdout is a terminal (source/rofi.c:533-545).
     public var warnings: [String] = []
     public var match = MatchOptions()
+    public var sort = false
+    public var sortingMethod = SortingMethod.levenshtein
+    public var cycle = true
     /// Upstream's key bindings with the `-kb-*` options applied.
     public var keymap = Keymap()
     /// rofi's available modes: the built-ins (source/rofi.c:718-739), then
@@ -140,6 +143,13 @@ public struct ShowOptions: Sendable {
         // (source/rofi.c:885-888).
         do {
             match = try MatchOptions(arguments: args)
+        } catch {
+            errors.append("\(error)")
+        }
+        sort = args.bool("sort", default: sort)
+        cycle = args.bool("cycle", default: cycle)
+        do {
+            sortingMethod = try SortingMethod(arguments: args)
         } catch {
             errors.append("\(error)")
         }
