@@ -54,8 +54,17 @@ import Testing
         #expect(session.selectedVisibleIndex == 0)
     }
 
-    @Test func selectionMovementClampsAndSelectionCanBeExplicit() throws {
+    // Upstream cycles by default; `-no-cycle` restores the clamp (config/config.c:115).
+    @Test func singleStepMovementWrapsByDefault() throws {
         var session = try makeSession()
+        session.moveSelection(by: -1)
+        #expect(session.selectedVisibleIndex == 2)
+        session.moveSelection(by: 1)
+        #expect(session.selectedVisibleIndex == 0)
+    }
+
+    @Test func selectionMovementClampsAndSelectionCanBeExplicit() throws {
+        var session = try makeSession(["-no-cycle"])
 
         session.moveSelection(by: -1)
         #expect(session.selectedVisibleIndex == 0)
@@ -239,6 +248,17 @@ import Testing
 
         #expect(session.matches.map(\.sourceIndex) == [1, 3, 5])
         #expect(session.matches.map(\.row.text) == ["Banana", "mango", "orange"])
+    }
+
+    @Test func appendedRowsRerankTheCompleteMatchSet() throws {
+        var session = try makeSession(
+            ["-sort", "-sorting-method", "levenshtein", "-filter", "foo"],
+            rows: [Row(parsing: "food")])
+
+        session.appendRows([Row(parsing: "foo")])
+
+        #expect(session.matches.map(\.sourceIndex) == [1, 0])
+        #expect(session.matches.map(\.row.text) == ["foo", "food"])
     }
 
     @Test func appendKeepsTheCurrentSelection() throws {

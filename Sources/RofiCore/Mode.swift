@@ -37,8 +37,8 @@ public enum ModeResult: Equatable, Sendable {
 /// reference: `result` changes what `rows` returns next (a script mode re-runs
 /// its script), and one mode can sit in the switcher more than once.
 ///
-/// ponytail: no completion or preprocess_input yet; icons are file paths
-/// only, no theme icon names.
+/// ponytail: no preprocess_input yet; icons are file paths only, no theme icon
+/// names.
 public protocol Mode: AnyObject {
     var name: String { get }
     /// The rows offered now, re-read after every switch and reload
@@ -59,6 +59,8 @@ public protocol Mode: AnyObject {
     var markupRows: Bool { get }
     /// `_token_match`; by default the row's text must match.
     func matches(_ row: Row, matcher: Matcher) -> Bool
+    /// `_get_completion`, used as the text scored by interactive sorting.
+    func completion(at row: Int) -> String
     /// `_get_icon` (source/mode.c:87-96) as the file whose Finder icon a
     /// source row shows; nil for none, the default.
     func iconPath(at row: Int) -> String?
@@ -81,4 +83,5 @@ extension Mode {
     public func matches(_ row: Row, matcher: Matcher) -> Bool {
         matcher.matches(row.text)
     }
+    public func completion(at row: Int) -> String { rows[row].text }
 }

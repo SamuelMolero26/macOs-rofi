@@ -17,6 +17,50 @@ public func levenshtein(_ needle: String, _ haystack: String, caseSensitive: Boo
     return column[needle.count]
 }
 
+/// Scorers accepted by `-sorting-method`. Both return lower scores for better
+/// matches, matching the comparison in rofi's view sorter.
+public enum SortingMethod: String, Equatable, Sendable {
+    case levenshtein
+    case fzf
+
+    /// helper.c:676-693: names compare exactly and `normal` aliases levenshtein.
+    /// ponytail: `fzf-v2` is out of scope (issue #70), so it is rejected.
+    init(arguments args: Arguments) throws {
+        switch args.string("-sorting-method") {
+        case nil, "normal", "levenshtein": self = .levenshtein
+        case "fzf": self = .fzf
+        case let value?:
+            throw InvalidMatchingConfiguration(errors: [
+                "\tconfig.sorting_method=\(value) is not a valid sorting strategy.\n"
+                    + "Valid options are: normal or fzf.\n"
+            ])
+        }
+    }
+}
+
+/// Stably rank an already-filtered result set. Empty input remains in source
+/// order, as rofi bypasses scoring until the user enters a query.
+func sortedByScore<Element>(
+    _ elements: [Element], query: String, match: MatchOptions, method: SortingMethod,
+    text: (Element) -> String
+) -> [Element] {
+    guard !query.isEmpty else { return elements }
+    let caseSensitive = isCaseSensitive(query: query, options: match)
+    let ranked = elements.enumerated().map { offset, element in
+        let score =
+            switch method {
+            case .levenshtein:
+                levenshtein(query, text(element), caseSensitive: caseSensitive)
+            case .fzf:
+                fuzzyScore(query, text(element), caseSensitive: caseSensitive)
+            }
+        return (offset: offset, element: element, score: score)
+    }
+    return ranked.sorted { first, second in
+        first.score == second.score ? first.offset < second.offset : first.score < second.score
+    }.map(\.element)
+}
+
 /// Max text length the fzf scorer accepts (FUZZY_SCORER_MAX_LENGTH).
 private let maxLength = 256
 /// MIN_SCORE is INT_MIN / 2; scores stay well inside Int32.

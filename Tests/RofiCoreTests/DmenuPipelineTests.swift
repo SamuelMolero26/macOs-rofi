@@ -25,6 +25,35 @@ import Testing
         #expect(pipeline.matchingRows(in: extras, query: "foo").map(\.sourceIndex) == [3, 4])
     }
 
+    @Test func sortingRanksInteractiveMatchesByDisplayTextButNotAnEmptyQueryOrDump() throws {
+        let pipeline = try pipeline(["-sort", "-sorting-method", "levenshtein"])
+        let rows = [
+            Row(parsing: "foo first\0display\u{1f}food"),
+            Row(parsing: "foo second\0display\u{1f}foo"),
+        ]
+
+        #expect(pipeline.sort)
+        #expect(pipeline.sortingMethod == .levenshtein)
+        #expect(pipeline.matchingRows(in: rows, query: "foo").map(\.sourceIndex) == [1, 0])
+        #expect(pipeline.matchingRows(in: rows, query: "").map(\.sourceIndex) == [0, 1])
+        #expect(pipeline.dump(rows: rows) == ["foo first\n", "foo second\n"])
+    }
+
+    @Test func fzfSortingMethodIsAcceptedAndUnknownMethodsAreRejected() throws {
+        let fzf = try pipeline(["-sort", "-sorting-method", "fzf", "-matching", "fuzzy"])
+        let rows = ["firefox", "fire-fox"].map { Row(parsing: $0) }
+
+        #expect(fzf.sortingMethod == .fzf)
+        #expect(fzf.matchingRows(in: rows, query: "ff").map(\.sourceIndex) == [1, 0])
+        // helper.c:676-693: `normal` aliases levenshtein; names compare exactly.
+        #expect(try pipeline(["-sorting-method", "normal"]).sortingMethod == .levenshtein)
+        for bad in ["fzf-v2", "FZF"] {
+            #expect(throws: InvalidMatchingConfiguration.self) {
+                try pipeline(["-sorting-method", bad])
+            }
+        }
+    }
+
     @Test func formattedOutputUsesOriginalIndexAndSuppliedLiveFilter() throws {
         let pipeline = try pipeline(["-format", "i:d:s:f:F", "-filter", "stale"])
         let match = DmenuMatch(sourceIndex: 4, row: Row(parsing: "entry"))
