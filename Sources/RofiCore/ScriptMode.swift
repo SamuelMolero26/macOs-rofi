@@ -217,7 +217,10 @@ public func makeModes(_ specs: [ModeSpec]) -> [any Mode] {
 /// instance when a name is listed again bare.
 public func makeModes(
     _ specs: [ModeSpec], applications: () -> [ApplicationRecord],
-    launcher: @escaping ApplicationLauncher
+    launcher: @escaping ApplicationLauncher,
+    executables: @escaping () -> [String]? = { nil },
+    commandLauncher: @escaping CommandLauncher = unavailableCommandLauncher,
+    scriptWriter: @escaping ScriptWriter = unavailableScriptWriter
 ) -> [any Mode] {
     let home = ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory()
     let applicationRecords =
@@ -226,6 +229,11 @@ public func makeModes(
     return specs.map { spec in
         switch spec {
         case .script(let name, let path): ScriptMode(name: name, command: path, modeNames: specs.map(\.name))
+        case .run(let historyPath, let terminal, let runCommand, let runShellCommand):
+            RunMode(
+                discover: executables, history: historyPath.map { History(url: URL(fileURLWithPath: $0)) },
+                terminal: terminal, runCommand: runCommand, runShellCommand: runShellCommand,
+                launcher: commandLauncher, writeScript: scriptWriter)
         case .drun(let historyPath):
             DrunMode(
                 applications: applicationRecords,
@@ -235,6 +243,16 @@ public func makeModes(
             FileBrowserMode(directory: directory, showHidden: showHidden, home: home)
         }
     }
+}
+
+/// Stand-ins for callers that inject no process launcher: nothing is spawned.
+public func unavailableCommandLauncher(_ argv: [String]) -> Result<Void, ApplicationLaunchFailure> {
+    .failure(
+        ApplicationLaunchFailure(command: argv.joined(separator: " "), reason: "command launcher is unavailable"))
+}
+
+public func unavailableScriptWriter(_ contents: String, _ mode: Int) -> Result<String, ApplicationLaunchFailure> {
+    .failure(ApplicationLaunchFailure(command: "script", reason: "script writer is unavailable"))
 }
 
 /// A failure worded as the GError rofi prints.

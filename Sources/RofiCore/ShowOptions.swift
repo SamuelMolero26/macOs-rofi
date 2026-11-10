@@ -2,6 +2,11 @@ import Foundation
 
 /// One entry of the mode list: a script mode or a built-in.
 public enum ModeSpec: Equatable, Sendable {
+    /// `run` (source/modes/run.c:599) with its history file, nil when
+    /// `-disable-history` is set, and the `-terminal`, `-run-command` and
+    /// `-run-shell-command` settings (config/config.c:65-74); a nil terminal
+    /// means Terminal.app.
+    case run(historyPath: String?, terminal: String?, runCommand: String, runShellCommand: String)
     /// `drun` (source/modes/drun.c:1693) with its history file, nil when
     /// `-disable-history` is set (drun.c:883-893, config/config.c:103).
     case drun(historyPath: String?)
@@ -15,6 +20,7 @@ public enum ModeSpec: Equatable, Sendable {
     public var name: String {
         switch self {
         case .script(let name, _): name
+        case .run: "run"
         case .drun: "drun"
         case .fileBrowser: "filebrowser"
         }
@@ -97,12 +103,18 @@ public struct ShowOptions: Sendable {
             args.string("-modes") ?? args.string("-modi") ?? args.string("-switchers") ?? "drun,filebrowser"
         // Each name resolves to the first available mode with it, built-ins
         // in upstream's order (source/rofi.c:732-740).
-        // ponytail: only `drun` and `filebrowser` are built in; window, run,
+        // ponytail: only `run`, `drun` and `filebrowser` are built in; window,
         // ssh, combi, keys and recursivebrowser stay "not found".
         // ponytail: upstream reads the filebrowser's settings from the theme
         // (source/modes/filebrowser.c:395-405), not from flags.
+        let disableHistory = args.bool("disable-history", default: false)
         var known: [ModeSpec] = [
-            .drun(historyPath: args.bool("disable-history", default: false) ? nil : drunHistoryPath(args)),
+            .run(
+                historyPath: disableHistory ? nil : cacheDirectory(args) + "/rofi-4.runcache",
+                terminal: args.string("-terminal"),
+                runCommand: args.string("-run-command") ?? "{cmd}",
+                runShellCommand: args.string("-run-shell-command") ?? "{terminal} -e {cmd}"),
+            .drun(historyPath: disableHistory ? nil : drunHistoryPath(args)),
             .fileBrowser(
                 directory: args.string("-filebrowser-directory"),
                 showHidden: args.bool("filebrowser-show-hidden", default: false)),
@@ -211,12 +223,16 @@ private func disabledModeWarning(_ mode: String, list: String) -> String {
 /// tilde-expanded, else g_get_user_cache_dir, which is `$XDG_CACHE_HOME`
 /// or `~/.cache` (source/rofi.c:1227-1231).
 private func drunHistoryPath(_ args: Arguments) -> String {
+    cacheDirectory(args) + "/rofi3.druncache"
+}
+
+/// `cache_dir` (source/rofi.c:1227-1231), shared by the history files; the
+/// run mode's is `rofi-4.runcache` (source/modes/run.c:64).
+private func cacheDirectory(_ args: Arguments) -> String {
     let environment = ProcessInfo.processInfo.environment
-    let directory =
-        args.string("-cache-dir").map(expandPath)
+    return args.string("-cache-dir").map(expandPath)
         ?? environment["XDG_CACHE_HOME"].flatMap { $0.isEmpty ? nil : $0 }
         ?? (environment["HOME"] ?? NSHomeDirectory()) + "/.cache"
-    return directory + "/rofi3.druncache"
 }
 
 /// `script_mode_gather_user_scripts` (source/modes/script.c:636-665): each

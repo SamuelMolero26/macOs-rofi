@@ -555,4 +555,31 @@ private let reportRun = """
         let stillOpen = s.cancel()
         #expect(!stillOpen)
     }
+
+    // source/rofi.c:795-826: a run spec builds a RunMode whose discovery,
+    // launcher and script writer are the injected ones.
+    @Test func makeModesBuildsRunWithInjectedDependencies_rofi_c_795() throws {
+        var launched: [[String]] = []
+        let modes = makeModes(
+            [.run(historyPath: nil, terminal: "kitty", runCommand: "{cmd}", runShellCommand: "{terminal} -e {cmd}")],
+            applications: { [] }, launcher: { _ in .success(()) },
+            executables: { ["cat", "ls"] },
+            commandLauncher: {
+                launched.append($0)
+                return .success(())
+            },
+            scriptWriter: { _, _ in .success("/tmp/unused") })
+        let run = try #require(modes[0] as? RunMode)
+        #expect(run.rows.map(\.text) == ["cat", "ls"])
+        var input: String? = nil
+        _ = run.result(.ok, runInTerminal: true, input: &input, selectedRow: 1)
+        #expect(launched == [["kitty", "-e", "ls"]])
+    }
+
+    // Without injected dependencies nothing is discovered or spawned.
+    @Test func makeModesWithoutRunDependenciesIsInert_rofi_c_795() throws {
+        let modes = makeModes(
+            [.run(historyPath: nil, terminal: nil, runCommand: "{cmd}", runShellCommand: "{terminal} -e {cmd}")])
+        #expect(try #require(modes[0] as? RunMode).rows.isEmpty)
+    }
 }
