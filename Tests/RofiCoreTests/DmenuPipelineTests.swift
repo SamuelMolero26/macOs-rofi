@@ -18,6 +18,11 @@ import Testing
 
         #expect(matches.map(\.sourceIndex) == [1])
         #expect(matches.map(\.row.text) == ["Banana"])
+
+        // A token the text misses is retried on meta, and a permanent row
+        // always matches (source/modes/dmenu.c:668-708).
+        let extras = fruit + ["x\0meta\u{1f}foo", "y\0permanent\u{1f}true"].map { Row(parsing: $0) }
+        #expect(pipeline.matchingRows(in: extras, query: "foo").map(\.sourceIndex) == [3, 4])
     }
 
     @Test func formattedOutputUsesOriginalIndexAndSuppliedLiveFilter() throws {
@@ -257,6 +262,9 @@ import Testing
         #expect(!pipeline.multiSelect)
         #expect(pipeline.ballotSelected == "☑ ")
         #expect(pipeline.ballotUnselected == "☐ ")
+        // `-show-icons` is off unless given (config/config.c:47).
+        let icons = try [[], ["-show-icons"], ["-no-show-icons"]].map { try self.pipeline($0).showIcons }
+        #expect(icons == [false, true, false])
     }
 
     @Test func multiSelectAndBallotsAreRead() throws {

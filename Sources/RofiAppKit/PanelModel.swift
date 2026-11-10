@@ -69,6 +69,9 @@ enum PanelUpdate {
         if pipeline.atBottom, style.location == nil { style.location = .south }
         style.markupRows = pipeline.markupRows
         style.ellipsizeMode = pipeline.ellipsizeMode
+        // The theme never sets the icon column, so the flag alone decides it,
+        // as `runModePanel` does for `-show`.
+        style.showIcons = pipeline.showIcons
         return style
     }
 
@@ -84,7 +87,7 @@ enum PanelUpdate {
     func displayText(for match: DmenuMatch) -> String { session.displayText(for: match) }
     func state(of match: DmenuMatch) -> DmenuRowState { session.state(of: match) }
     func iconPath(for match: DmenuMatch) -> String? { nil }
-    func iconImagePath(for match: DmenuMatch) -> String? { nil }
+    func iconImagePath(for match: DmenuMatch) -> String? { match.row.iconImagePath }
 
     func updateQuery(_ query: String) -> PanelUpdate {
         complete(session.updateQuery(query)) ?? .reload
