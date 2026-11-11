@@ -115,6 +115,13 @@ public final class ScriptMode: Mode {
         return .reload
     }
 
+    /// MENU_COMPLETE matches no branch of `script_mode_result`, so the view
+    /// exits without running the script (script.c:373, 380-420).
+    public func complete(input: inout String?, selectedRow: Int?) -> ModeResult? {
+        selectedRowAfterResult = nil
+        return .exit
+    }
+
     /// `execute_executor` (script.c:197-320): spawn without a shell, with
     /// `argument` appended, then read stdout to the end.
     private func execute(argument: String?, retv: Int, row: Row?, input: String?) -> [Row] {
@@ -198,7 +205,7 @@ public final class ScriptMode: Mode {
 /// must use the records-and-launcher overload so RofiCore stays platform-free.
 public func makeModes(_ specs: [ModeSpec]) -> [any Mode] {
     precondition(
-        !specs.contains { if case .drun = $0 { true } else { false } },
+        !withCombined(specs).contains { if case .drun = $0 { true } else { false } },
         "drun mode requires injected application records and launcher")
     return makeModes(
         specs, applications: { [] },
@@ -220,28 +227,59 @@ public func makeModes(
     launcher: @escaping ApplicationLauncher,
     executables: @escaping () -> [String]? = { nil },
     commandLauncher: @escaping CommandLauncher = unavailableCommandLauncher,
-    scriptWriter: @escaping ScriptWriter = unavailableScriptWriter
+    scriptWriter: @escaping ScriptWriter = unavailableScriptWriter,
+    listGenerator: @escaping ListGenerator = unavailableListGenerator,
+    fileSystem: any FileBrowserFileSystem = DiskFileSystem(),
+    sshFiles: SshFiles = .none
 ) -> [any Mode] {
     let home = ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory()
     let applicationRecords =
-        specs.contains { if case .drun = $0 { true } else { false } }
+        withCombined(specs).contains { if case .drun = $0 { true } else { false } }
         ? applications() : []
-    return specs.map { spec in
+    // run's file completer reads the same settings as the filebrowser mode
+    // (filebrowser.c:395-405); they only reach us through its spec.
+    let browserSettings = withCombined(specs).lazy.compactMap { spec -> (directory: String?, showHidden: Bool)? in
+        if case .fileBrowser(let directory, let showHidden) = spec { (directory, showHidden) } else { nil }
+    }.first
+    // run.c:524-528: a fresh completer per completion.
+    let completer = {
+        FileBrowserMode(
+            directory: browserSettings?.directory, showHidden: browserSettings?.showHidden ?? false, home: home,
+            fileSystem: fileSystem)
+    }
+    func make(_ spec: ModeSpec) -> any Mode {
         switch spec {
         case .script(let name, let path): ScriptMode(name: name, command: path, modeNames: specs.map(\.name))
-        case .run(let historyPath, let terminal, let runCommand, let runShellCommand):
+        case .run(let historyPath, let terminal, let runCommand, let runShellCommand, let listCommand):
             RunMode(
                 discover: executables, history: historyPath.map { History(url: URL(fileURLWithPath: $0)) },
                 terminal: terminal, runCommand: runCommand, runShellCommand: runShellCommand,
-                launcher: commandLauncher, writeScript: scriptWriter)
+                launcher: commandLauncher, writeScript: scriptWriter,
+                listCommand: listCommand, generate: listGenerator, completer: completer)
+        case .ssh(let historyPath, let terminal, let sshCommand, let sshClient, let parseHosts, let parseKnownHosts):
+            SshMode(
+                home: home, files: sshFiles, history: historyPath.map { History(url: URL(fileURLWithPath: $0)) },
+                terminal: terminal, sshCommand: sshCommand, sshClient: sshClient, parseHosts: parseHosts,
+                parseKnownHosts: parseKnownHosts, launcher: commandLauncher, writeScript: scriptWriter)
         case .drun(let historyPath):
             DrunMode(
                 applications: applicationRecords,
                 history: historyPath.map { History(url: URL(fileURLWithPath: $0)) },
                 launcher: launcher)
         case .fileBrowser(let directory, let showHidden):
-            FileBrowserMode(directory: directory, showHidden: showHidden, home: home)
+            FileBrowserMode(directory: directory, showHidden: showHidden, home: home, fileSystem: fileSystem)
+        case .combi(let modes, let displayNames, let displayFormat):
+            CombiMode(modes: modes.map(make), displayNames: displayNames, displayFormat: displayFormat)
+        case .keys(let keymap): KeysMode(keymap: keymap)
         }
+    }
+    return specs.map(make)
+}
+
+/// The specs with each combi's modes after it.
+private func withCombined(_ specs: [ModeSpec]) -> [ModeSpec] {
+    specs.flatMap { spec in
+        if case .combi(let modes, _, _) = spec { [spec] + modes } else { [spec] }
     }
 }
 
@@ -253,6 +291,11 @@ public func unavailableCommandLauncher(_ argv: [String]) -> Result<Void, Applica
 
 public func unavailableScriptWriter(_ contents: String, _ mode: Int) -> Result<String, ApplicationLaunchFailure> {
     .failure(ApplicationLaunchFailure(command: "script", reason: "script writer is unavailable"))
+}
+
+public func unavailableListGenerator(_ argv: [String]) -> Result<[String], ApplicationLaunchFailure> {
+    .failure(
+        ApplicationLaunchFailure(command: argv.joined(separator: " "), reason: "list generator is unavailable"))
 }
 
 /// A failure worded as the GError rofi prints.

@@ -153,19 +153,19 @@ private final class ConfigFixture {
     // `+` on the enabled ones.
     @Test func unknownOrBuiltinNameIsNotFound_rofi_c_546() {
         #expect(
-            errors(["-modes", "a:x,ssh"]) == [
-                "Mode ssh is not found.\nThe following modes are known:\n        * run\n        * drun\n        * filebrowser\n        * +a\n"
+            errors(["-modes", "a:x,window"]) == [
+                "Mode window is not found.\nThe following modes are known:\n        * run\n        * ssh\n        * drun\n        * combi\n        * keys\n        * filebrowser\n        * +a\n"
             ])
     }
 
     // source/rofi.c:832-835, 885-888: every bad token is collected, and setup
     // errors win over `-show`.
     @Test func everyBadTokenIsCollected_rofi_c_885() throws {
-        let errors = errors(["-modes", "ssh,drun,keys", "-show", "a:x"])
+        let errors = errors(["-modes", "window,drun,nope", "-show", "a:x"])
         #expect(
             errors == [
-                "Mode ssh is not found.\nThe following modes are known:\n        * run\n        * drun\n        * filebrowser\n",
-                "Mode keys is not found.\nThe following modes are known:\n        * run\n        * +drun\n        * filebrowser\n",
+                "Mode window is not found.\nThe following modes are known:\n        * run\n        * ssh\n        * drun\n        * combi\n        * keys\n        * filebrowser\n",
+                "Mode nope is not found.\nThe following modes are known:\n        * run\n        * ssh\n        * +drun\n        * combi\n        * keys\n        * filebrowser\n",
             ])
     }
 
@@ -175,8 +175,8 @@ private final class ConfigFixture {
         let matching = try #require(errors(["-matching", "bogus"]).first)
         #expect(matching.hasPrefix("The configuration failed to validate:\n\tconfig.matching=bogus"))
         #expect(
-            errors(["-modes", "ssh", "-matching", "bogus", "-show", "nope"]) == [
-                "Mode ssh is not found.\nThe following modes are known:\n        * run\n        * drun\n        * filebrowser\n",
+            errors(["-modes", "window", "-matching", "bogus", "-show", "nope"]) == [
+                "Mode window is not found.\nThe following modes are known:\n        * run\n        * ssh\n        * drun\n        * combi\n        * keys\n        * filebrowser\n",
                 matching,
             ])
         #expect(errors(["-modes", "a:x", "-matching", "bogus", "-show", "nope"]) == [matching])
@@ -190,8 +190,8 @@ private final class ConfigFixture {
         let binding = try #require(errors(["-kb-custom-2", "Alt+bogus"]).first)
         #expect(binding.hasPrefix("Failed to set binding Alt+bogus for: Custom keybinding 2 (kb-custom-2)"))
         #expect(
-            errors(["-modes", "ssh", "-matching", "bogus", "-kb-custom-2", "Alt+bogus"]) == [
-                "Mode ssh is not found.\nThe following modes are known:\n        * run\n        * drun\n        * filebrowser\n",
+            errors(["-modes", "window", "-matching", "bogus", "-kb-custom-2", "Alt+bogus"]) == [
+                "Mode window is not found.\nThe following modes are known:\n        * run\n        * ssh\n        * drun\n        * combi\n        * keys\n        * filebrowser\n",
                 binding,
                 matching,
             ])
@@ -222,7 +222,10 @@ private final class ConfigFixture {
 
                 The following modes can be enabled:
                     • run
+                    • ssh
                     • drun
+                    • combi
+                    • keys
                     • filebrowser
 
                 To activate a mode, add it to the list in the modes setting.
@@ -242,13 +245,9 @@ private final class ConfigFixture {
         #expect(five.description.hasSuffix("E2\n\nThere are 2 more errors."))
     }
 
-    // config/config.c:36-42: upstream's default `window,drun,run,ssh` has
-    // only drun implemented here, so both built-ins are enabled instead.
-    @Test func defaultModeListIsDrunAndFilebrowser_config_c_36() throws {
-        #expect(
-            try parse([]).modes == [
-                .drun(historyPath: defaultHistory), .fileBrowser(directory: nil, showHidden: false),
-            ])
+    // config/config.c:36-42: upstream's default without window mode.
+    @Test func defaultModeListIsDrunRunSsh_config_c_36() throws {
+        #expect(try parse([]).modes.map(\.name) == ["drun", "run", "ssh"])
     }
 
     // source/rofi.c:935-937, 161-168: `-show` picks the first mode with that
@@ -285,8 +284,8 @@ private final class ConfigFixture {
     // source/rofi.c:946-950: an unknown `-show` name is an error.
     @Test func showUnknownNameIsAnError_rofi_c_946() {
         #expect(
-            errors(["-modes", "a:x", "-show", "ssh"]) == [
-                "Mode ssh is not found.\nThe following modes are known:\n        * run\n        * drun\n        * filebrowser\n        * +a\n"
+            errors(["-modes", "a:x", "-show", "window"]) == [
+                "Mode window is not found.\nThe following modes are known:\n        * run\n        * ssh\n        * drun\n        * combi\n        * keys\n        * filebrowser\n        * +a\n"
             ])
     }
 
@@ -402,25 +401,24 @@ private final class ConfigFixture {
     // its `+` and is no longer offered as one that can be enabled.
     @Test func enabledFilebrowserIsMarkedAndNotOffered_rofi_c_547() throws {
         #expect(
-            errors(["-modes", "filebrowser,ssh"]) == [
-                "Mode ssh is not found.\nThe following modes are known:\n        * run\n        * drun\n        * +filebrowser\n"
+            errors(["-modes", "filebrowser,window"]) == [
+                "Mode window is not found.\nThe following modes are known:\n        * run\n        * ssh\n        * drun\n        * combi\n        * keys\n        * +filebrowser\n"
             ])
         let unsure = try parse(["-modes", "filebrowser"]).unsureWhatToShow
         #expect(
             unsure.contains(
-                "enabled:\n    • filebrowser\n\nThe following modes can be enabled:\n    • run\n    • drun\n\nTo activate"
+                "enabled:\n    • filebrowser\n\nThe following modes can be enabled:\n    • run\n    • ssh\n    • drun\n    • combi\n    • keys\n\nTo activate"
             ))
     }
 
-    // source/rofi.c:732-739: drun is a built-in, registered before
-    // filebrowser; listed by default it starts with no warning.
+    // source/rofi.c:732-739: drun is a built-in, registered after ssh;
+    // listed by default it starts with no warning.
     @Test func showResolvesTheDrunBuiltin_rofi_c_735() throws {
         let options = try parse(["-show", "drun"])
         #expect(options.modes.first == .drun(historyPath: defaultHistory))
-        #expect(options.modes.map(\.name) == ["drun", "filebrowser"])
         #expect(options.startIndex == 0)
         #expect(options.warnings.isEmpty)
-        #expect(options.availableModes.map(\.name) == ["run", "drun", "filebrowser"])
+        #expect(options.availableModes.map(\.name) == ["run", "ssh", "drun", "combi", "keys", "filebrowser"])
     }
 
     // source/modes/drun.c:883-893, source/rofi.c:1227-1231: the history
@@ -462,13 +460,15 @@ private final class ConfigFixture {
         #expect(options.modes.map(\.name) == ["run", "drun"])
     }
 
-    // source/rofi.c:935-945: `-show run` enables it, with the usual warning;
-    // the default mode list is unchanged.
-    @Test func showRunStartsRunAndWarns_rofi_c_935() throws {
-        let options = try parse(["-show", "run"])
-        #expect(options.modes.map(\.name) == ["drun", "filebrowser", "run"])
-        #expect(options.startIndex == 2)
-        #expect(options.warnings.count == 1)
+    // source/rofi.c:935-937: run and ssh are in the default list, so `-show`
+    // starts on them with no warning.
+    @Test func showRunOrSshStartsInTheDefaultList_rofi_c_935() throws {
+        let run = try parse(["-show", "run"])
+        let ssh = try parse(["-show", "ssh"])
+        #expect(run.modes.map(\.name) == ["drun", "run", "ssh"])
+        #expect(run.startIndex == 1)
+        #expect(ssh.startIndex == 2)
+        #expect(run.warnings.isEmpty && ssh.warnings.isEmpty)
     }
 
     // config/config.c:65-74, source/xrmoptions.c: the three command options.
@@ -485,8 +485,68 @@ private final class ConfigFixture {
             ])
     }
 
+    // source/xrmoptions.c:244, config/config.c:72: `-run-list-command`; nil
+    // when absent.
+    @Test func runReadsItsListCommand_xrmoptions_c_244() throws {
+        let options = try parse(["-modes", "run", "-run-list-command", "ls ~/bin", "-cache-dir", "/tmp/c"])
+        #expect(
+            options.modes == [
+                .run(
+                    historyPath: "/tmp/c/rofi-4.runcache", terminal: nil, runCommand: "{cmd}",
+                    runShellCommand: "{terminal} -e {cmd}", listCommand: "ls ~/bin")
+            ])
+        let absent = try parse(["-modes", "run", "-cache-dir", "/tmp/c"])
+        guard case .run(_, _, _, _, let listCommand) = absent.modes[0] else {
+            Issue.record("not a run spec")
+            return
+        }
+        #expect(listCommand == nil)
+    }
+
     // config/config.c:103: no history path at all.
     @Test func disableHistoryDropsTheRunHistory_config_c_103() throws {
         #expect(try parse(["-modes", "run", "-disable-history"]).modes == [defaultRun])
+    }
+
+    // MARK: ssh (source/modes/ssh.c:83, config/config.c:64-68, 122-125)
+
+    private var sshHistory: String {
+        if let xdg = getenv("XDG_CACHE_HOME"), xdg.pointee != 0 { return String(cString: xdg) + "/rofi-2.sshcache" }
+        return home + "/.cache/rofi-2.sshcache"
+    }
+
+    // source/rofi.c:732-739: ssh is a built-in between run and drun, with its
+    // own cache file and upstream's defaults.
+    @Test func sshIsABuiltinWithItsOwnHistoryFile_ssh_c_83() throws {
+        let options = try parse(["-modes", "ssh,drun"])
+        #expect(
+            options.modes == [
+                .ssh(
+                    historyPath: sshHistory, terminal: nil, sshCommand: "{terminal} -e {ssh-client} {host} [-p {port}]",
+                    sshClient: "ssh", parseHosts: false, parseKnownHosts: true),
+                .drun(historyPath: defaultHistory),
+            ])
+        #expect(options.availableModes.map(\.name) == ["run", "ssh", "drun", "combi", "keys", "filebrowser"])
+    }
+
+    // source/xrmoptions.c:212-234, 335, 423-436, 595: the ssh options.
+    @Test func sshReadsItsOptions_xrmoptions_c_228() throws {
+        let options = try parse([
+            "-modes", "ssh", "-terminal", "ghostty", "-ssh-command", "{terminal} -e {ssh-client} -A {host}",
+            "-ssh-client", "mosh", "-parse-hosts", "-no-parse-known-hosts", "-cache-dir", "/tmp/c",
+        ])
+        #expect(
+            options.modes == [
+                .ssh(
+                    historyPath: "/tmp/c/rofi-2.sshcache", terminal: "ghostty",
+                    sshCommand: "{terminal} -e {ssh-client} -A {host}", sshClient: "mosh", parseHosts: true,
+                    parseKnownHosts: false)
+            ])
+        guard case .ssh(let historyPath, _, _, _, _, _) = try parse(["-modes", "ssh", "-disable-history"]).modes[0]
+        else {
+            Issue.record("not an ssh spec")
+            return
+        }
+        #expect(historyPath == nil)
     }
 }

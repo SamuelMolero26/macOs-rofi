@@ -255,6 +255,78 @@ private struct Opened: Equatable {
         #expect(mode.iconPath(at: mode.rows.count) == nil)
         #expect(make(directory: "/").iconPath(at: 0) == "/")
     }
+
+    // MARK: MENU_COMPLETE and the completer (filebrowser.c:481, 672-715)
+
+    // filebrowser.c:481: MENU_COMPLETE matches no branch, so it exits.
+    @Test func modeCompleteExits_filebrowser_c_481() {
+        let mode: any Mode = make()
+        var input: String? = "q"
+        #expect(mode.complete(input: &input, selectedRow: 0) == .exit)
+        #expect(opened.isEmpty)
+    }
+
+    private func complete(
+        _ mode: FileBrowserMode, _ action: MenuAction, input: String? = nil, row: Int? = nil
+    ) -> (result: ModeResult, path: String?) {
+        var input = input
+        return mode.completerResult(action, input: &input, selectedRow: row)
+    }
+
+    // filebrowser.c:695-697: a file is the answer, never opened.
+    @Test func completerOkOnAFileReturnsItsPath_filebrowser_c_695() {
+        let mode = make()
+        let answer = complete(mode, .ok, row: row(mode, "zeta.txt"))
+        #expect(answer.result == .exit)
+        #expect(answer.path == "/home/u/zeta.txt")
+        #expect(opened.isEmpty)
+    }
+
+    // filebrowser.c:679-694: up and directories are entered with a reset.
+    @Test func completerOkOnADirectoryOrUpEntersIt_filebrowser_c_679() {
+        let mode = make()
+        let down = complete(mode, .ok, row: row(mode, "Docs"))
+        #expect(down.result == .reset && down.path == nil)
+        #expect(mode.currentDirectory == "/home/u/Docs")
+        let up = complete(mode, .ok, row: 0)
+        #expect(up.result == .reset && up.path == nil)
+        #expect(mode.currentDirectory == "/home/u")
+    }
+
+    // filebrowser.c:678-681, 700: up at the root and no valid row reload.
+    @Test func completerOkWithoutAnEntryReloads_filebrowser_c_700() {
+        #expect(complete(make(directory: "/"), .ok, row: 0).result == .reload)
+        #expect(complete(make(), .ok, row: 99).result == .reload)
+        #expect(complete(make(), .ok, row: nil).result == .reload)
+    }
+
+    // filebrowser.c:701-716: custom input naming a directory enters it;
+    // anything else reloads; no input exits (674).
+    @Test func completerCustomInput_filebrowser_c_701() {
+        let mode = make()
+        #expect(complete(mode, .customInput, input: "/home/u/zeta.txt").result == .reload)
+        #expect(complete(mode, .customInput, input: "/missing").result == .reload)
+        #expect(complete(mode, .customInput, input: "/home/u/Docs/").result == .reset)
+        #expect(mode.currentDirectory == "/home/u/Docs")
+        let none = complete(mode, .customInput, input: nil)
+        #expect(none.result == .exit && none.path == nil)
+    }
+
+    // filebrowser.c:717-721: delete toggles hidden entries.
+    @Test func completerDeleteTogglesHidden_filebrowser_c_717() {
+        let mode = make()
+        #expect(complete(mode, .deleteEntry, row: 0).result == .reload)
+        #expect(names(mode).contains(".config"))
+        #expect(complete(mode, .deleteEntry, row: 0).result == .reload)
+        #expect(!names(mode).contains(".config"))
+    }
+
+    // filebrowser.c:674: any other action exits without a path.
+    @Test func completerCustomKeyExitsWithoutAPath_filebrowser_c_674() {
+        let answer = complete(make(), .customKey(1), row: 1)
+        #expect(answer.result == .exit && answer.path == nil)
+        #expect(opened.isEmpty)
+    }
 }
 
 // The real tree behind `FileBrowserMode`: readdir's types, links resolved by

@@ -129,9 +129,9 @@ public func openWithSystemOpener(path: String, directory: String) -> Result<Void
 ///
 /// ponytail: upstream's theme properties `sorting-method` (time sorts),
 /// `directories-first`, `command` and `cancel-returns-1`, the cache file that
-/// remembers the last directory (422-453, 523-527), the completer
-/// (673-722) and the alternate accept key (494-495, 511, 534-542) are not
-/// implemented; names sort like Finder, not glib's collate keys.
+/// remembers the last directory (422-453, 523-527) and the alternate accept
+/// key (494-495, 511, 534-542) are not implemented; names sort like Finder,
+/// not glib's collate keys.
 public final class FileBrowserMode: Mode {
     public let name = "filebrowser"
     public private(set) var rows: [Row] = []
@@ -277,14 +277,67 @@ public final class FileBrowserMode: Mode {
         case .customInput:
             // No input leaves MODE_EXIT (479-483, 544).
             guard let input else { return .exit }
-            let path = expandPath(input)
-            if fileSystem.exists(path), fileSystem.isDirectory(path) { return enter(normalized(path)) }
-            return .reload
+            return enterDirectory(typed: input)
         case .deleteEntry:
             showHidden.toggle()
             load()
             return .reload
         }
+    }
+
+    /// MENU_COMPLETE matches no branch of `file_browser_mode_result`, so the
+    /// view exits (filebrowser.c:481).
+    public func complete(input: inout String?, selectedRow: Int?) -> ModeResult? {
+        failure = nil
+        return .exit
+    }
+
+    /// `file_browser_mode_completer` (filebrowser.c:672-724), for a mode that
+    /// uses the browser as its file completer, as run does (run.c:474-487):
+    /// like `result`, but a chosen file is returned as `path`, never opened.
+    ///
+    /// ponytail: upstream returns `g_strescape(path)` (696), which turns `"`,
+    /// `\` and non-ASCII bytes into escapes that stay literal inside the
+    /// caller's g_shell_quote; the raw path is returned here.
+    public func completerResult(
+        _ action: MenuAction, input: inout String?, selectedRow: Int?
+    ) -> (result: ModeResult, path: String?) {
+        failure = nil
+        switch action {
+        case .ok:
+            // 678-700: no valid row, or up at the root, reloads.
+            guard let index = selectedRow, listing.indices.contains(index) else { return (.reload, nil) }
+            let item = listing[index]
+            switch item.kind {
+            case .up:
+                guard let parent = parent(of: currentDirectory) else { return (.reload, nil) }
+                return (enter(parent), nil)
+            case .directory:
+                return (enter(item.path), nil)
+            case .file:
+                return (.exit, item.path)
+            }
+        case .customInput:
+            // 701-716; no input falls through to MODE_EXIT (674).
+            guard let input else { return (.exit, nil) }
+            return (enterDirectory(typed: input), nil)
+        case .deleteEntry:
+            // 717-721.
+            showHidden.toggle()
+            load()
+            return (.reload, nil)
+        case .cancel, .customKey:
+            // 674: every other action exits without a path.
+            return (.exit, nil)
+        }
+    }
+
+    /// The typed path, expanded, entered when it is a directory; else the
+    /// view reloads (filebrowser.c:545-559, 701-716).
+    private func enterDirectory(typed input: String) -> ModeResult {
+        let path = expandPath(input)
+        if fileSystem.exists(path), fileSystem.isDirectory(path) { return enter(normalized(path)) }
+        return .reload
     }
 }
 

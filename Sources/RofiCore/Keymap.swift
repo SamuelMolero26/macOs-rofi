@@ -1,8 +1,9 @@
 import Foundation
 
 /// The key actions this port binds beyond plain accept, cancel and movement:
-/// rofi's ACCEPT_CUSTOM, ACCEPT_CUSTOM_ALT, ACCEPT_ALT, DELETE_ENTRY and
-/// CUSTOM_1..19 (include/keyb.h, source/keyb.c:119-134, 216-291).
+/// rofi's ACCEPT_CUSTOM, ACCEPT_CUSTOM_ALT, ACCEPT_ALT, DELETE_ENTRY,
+/// CUSTOM_1..19 and MODE_COMPLETE (include/keyb.h, source/keyb.c:119-146,
+/// 216-291).
 public enum KeyAction: Hashable, Sendable, CaseIterable {
     case acceptCustom
     case acceptCustomAlt
@@ -10,9 +11,12 @@ public enum KeyAction: Hashable, Sendable, CaseIterable {
     case deleteEntry
     /// `kb-custom-N`, with N in 1...19.
     case customKey(Int)
+    /// `kb-mode-complete`: MENU_COMPLETE (source/view.c:1128-1136).
+    case modeComplete
 
+    /// In source/keyb.c's binding order.
     public static let allCases: [KeyAction] =
-        [.acceptCustom, .acceptCustomAlt, .acceptAlt, .deleteEntry] + (1...19).map { .customKey($0) }
+        [.acceptCustom, .acceptCustomAlt, .acceptAlt, .deleteEntry, .modeComplete] + (1...19).map { .customKey($0) }
 
     /// The upstream option name, used as `-kb-<name>` on the command line.
     public var optionName: String {
@@ -22,6 +26,7 @@ public enum KeyAction: Hashable, Sendable, CaseIterable {
         case .acceptAlt: "kb-accept-alt"
         case .deleteEntry: "kb-delete-entry"
         case .customKey(let n): "kb-custom-\(n)"
+        case .modeComplete: "kb-mode-complete"
         }
     }
 
@@ -30,7 +35,7 @@ public enum KeyAction: Hashable, Sendable, CaseIterable {
         self = action
     }
 
-    /// The default binding string, copied from source/keyb.c:119-134, 216-291.
+    /// The default binding string, copied from source/keyb.c:119-146, 216-291.
     public var upstreamBinding: String {
         switch self {
         case .acceptCustom: "Control+Return"
@@ -39,16 +44,18 @@ public enum KeyAction: Hashable, Sendable, CaseIterable {
         case .deleteEntry: "Shift+Delete"
         case .customKey(let n) where n <= 10: "Alt+\(n % 10)"
         case .customKey(let n): "Alt+" + Self.shiftedDigitKeysyms[n - 11]
+        case .modeComplete: "Control+l"
         }
     }
 
-    /// The binding's description in source/keyb.c:119-134, 216-291.
+    /// The binding's description in source/keyb.c:119-146, 216-291.
     public var comment: String {
         switch self {
         case .acceptCustom, .acceptCustomAlt: "Use entered text as command (in ssh/run modes)"
         case .acceptAlt: "Use alternate accept command."
         case .deleteEntry: "Delete entry from history"
         case .customKey(let n): "Custom keybinding \(n)"
+        case .modeComplete: "Start completion for mode."
         }
     }
 
@@ -116,8 +123,10 @@ public enum KeyBindingError: Error, Equatable, CustomStringConvertible {
 /// ponytail: only the actions in `KeyAction`; accept-entry, cancel and
 /// movement stay hard-wired in the panel. When one chord is bound to two
 /// actions, the first in `KeyAction.allCases` wins.
-public struct Keymap: Sendable {
+public struct Keymap: Equatable, Sendable {
     private var bindings: [KeyAction: [KeyChord]]
+    /// Each action's binding string as given, shown by the `keys` mode.
+    private var strings: [KeyAction: String] = [:]
 
     /// Upstream's default bindings.
     public init() {
@@ -129,6 +138,12 @@ public struct Keymap: Sendable {
     /// string unbinds it. On error the old bindings stay.
     public mutating func rebind(_ action: KeyAction, to binding: String) throws {
         bindings[action] = try Keymap.parse(binding)
+        strings[action] = binding
+    }
+
+    /// `action`'s binding string: the `-kb-<name>` value, else the default.
+    public func binding(for action: KeyAction) -> String {
+        strings[action] ?? action.upstreamBinding
     }
 
     /// Upstream's defaults with every `-kb-<name> <binding>` applied; each
@@ -151,6 +166,7 @@ public struct Keymap: Sendable {
                 }
             }
             bindings[action] = chords
+            strings[action] = binding
         }
         if !errors.isEmpty { throw InvalidModeConfiguration(errors: errors) }
     }
