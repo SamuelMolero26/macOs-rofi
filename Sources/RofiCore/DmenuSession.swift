@@ -187,6 +187,12 @@ public struct DmenuSession: Sendable {
         case .deleteEntry:
             guard highlightedMatch != nil, pipeline.allowsCustomInput else { return nil }
             return DmenuCompletion(output: nil, outcome: .cancelled)
+        // MENU_COMPLETE quits the view with or without a row
+        // (source/view.c:1128-1136) and matches no dmenu branch: normal mode
+        // finishes with FALSE, -no-custom/-only-match restart
+        // (source/modes/dmenu.c:843-902, 906-964).
+        case .modeComplete:
+            return pipeline.allowsCustomInput ? DmenuCompletion(output: nil, outcome: .cancelled) : nil
         }
     }
 

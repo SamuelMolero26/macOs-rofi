@@ -33,6 +33,41 @@ private final class FakeMode: Mode {
     }
 }
 
+/// A mode that overrides the alt-aware requirement, recording the flag.
+private final class AltMode: Mode {
+    let name = "alt"
+    var rows: [Row] = ["one", "two"].map { Row(parsing: $0) }
+    private(set) var calls: [(action: MenuAction, alt: Bool, selectedRow: Int?)] = []
+
+    func result(_ action: MenuAction, input: inout String?, selectedRow: Int?) -> ModeResult {
+        calls.append((action, false, selectedRow))
+        return .reload
+    }
+
+    func result(_ action: MenuAction, alt: Bool, input: inout String?, selectedRow: Int?) -> ModeResult {
+        calls.append((action, alt, selectedRow))
+        return .reload
+    }
+}
+
+/// A mode that implements completion, recording what the switcher handed it.
+private final class CompleteMode: Mode {
+    let name = "complete"
+    var rows: [Row] = ["one", "two", "three"].map { Row(parsing: $0) }
+    var selectedRowAfterResult: Int?
+    var answer: ModeResult? = .reload
+    var rewrite: String?? = .none
+    private(set) var calls: [(input: String?, selectedRow: Int?)] = []
+
+    func result(_ action: MenuAction, input: inout String?, selectedRow: Int?) -> ModeResult { .reload }
+
+    func complete(input: inout String?, selectedRow: Int?) -> ModeResult? {
+        calls.append((input, selectedRow))
+        if case .some(let value) = rewrite { input = value }
+        return answer
+    }
+}
+
 // Contract: the switcher driver in rofi source/rofi.c:201-291, mode_result in
 // source/mode.c:131-147 and rofi_view_switch_mode in source/view.c:2150-2177.
 @Suite struct ModeSwitcherTests {
@@ -402,5 +437,131 @@ private final class FakeMode: Mode {
         #expect(!open)
         #expect(a.calls.last?.action == .ok)
         #expect(a.calls.last?.selectedRow == 1)
+    }
+
+    // MENU_CUSTOM_ACTION (include/mode.h:72,78,90; view.c:1280-1309).
+    @Test func acceptAltWithARowIsOkWithTheAltFlag_view_c_1280() {
+        let mode = AltMode()
+        var s = ModeSwitcher(modes: [mode])
+        s.selectVisibleIndex(1)
+
+        s.perform(key: .acceptAlt)
+
+        #expect(mode.calls.last?.action == .ok)
+        #expect(mode.calls.last?.alt == true)
+        #expect(mode.calls.last?.selectedRow == 1)
+    }
+
+    @Test func acceptAltWithoutARowIsCustomInputWithTheAltFlag_view_c_1280() {
+        let mode = AltMode()
+        var s = ModeSwitcher(modes: [mode], query: "zzz")
+        #expect(s.selectedVisibleIndex == nil)
+
+        s.perform(key: .acceptAlt)
+
+        #expect(mode.calls.last?.action == .customInput)
+        #expect(mode.calls.last?.alt == true)
+        #expect(mode.calls.last?.selectedRow == nil)
+    }
+
+    @Test func acceptCustomAltIsCustomInputWithTheAltFlag_view_c_1302() {
+        let mode = AltMode()
+        var s = ModeSwitcher(modes: [mode])
+
+        s.perform(key: .acceptCustomAlt)
+
+        #expect(mode.calls.last?.action == .customInput)
+        #expect(mode.calls.last?.alt == true)
+        #expect(mode.calls.last?.selectedRow == nil)
+    }
+
+    @Test func plainAcceptKeysKeepTheAltFlagOff() {
+        let mode = AltMode()
+        var s = ModeSwitcher(modes: [mode])
+
+        s.perform(key: .acceptCustom)
+        s.accept()
+        s.perform(.ok)
+
+        #expect(mode.calls.count == 3)
+        #expect(mode.calls.allSatisfy { !$0.alt })
+    }
+
+    @Test func aModeWithoutTheAltRequirementIgnoresTheFlag_view_c_1280() {
+        a.answer = .reload
+        var s = switcher()
+        s.selectVisibleIndex(1)
+
+        s.perform(key: .acceptAlt)
+        s.perform(key: .acceptCustomAlt)
+
+        #expect(a.calls.map(\.action) == [.ok, .customInput])
+        #expect(a.calls.first?.selectedRow == 1)
+    }
+
+    // MENU_COMPLETE: kb-mode-complete hands the mode the highlighted source
+    // row, or none (UINT32_MAX) without a visible row (source/view.c:1128-1136).
+    @Test func modeCompletePassesTheQueryAndTheHighlightedSourceRow_view_c_1128() {
+        let mode = CompleteMode()
+        var s = ModeSwitcher(modes: [mode], query: "t")
+        s.selectVisibleIndex(1)
+
+        let open = s.perform(key: .modeComplete)
+
+        #expect(open)
+        #expect(mode.calls.count == 1)
+        #expect(mode.calls.last?.input == "t")
+        #expect(mode.calls.last?.selectedRow == 2)
+    }
+
+    @Test func modeCompleteWithoutAVisibleRowPassesNoRow_view_c_1130() {
+        let mode = CompleteMode()
+        var s = ModeSwitcher(modes: [mode], query: "zzz")
+
+        s.perform(key: .modeComplete)
+
+        #expect(mode.calls.count == 1)
+        #expect(mode.calls.last?.selectedRow == nil)
+    }
+
+    // The result and the input are applied as for `result` (rofi.c:235-291).
+    @Test func modeCompleteAppliesTheInputAndTheResult_rofi_c_243() {
+        let mode = CompleteMode()
+        mode.rewrite = "tw"
+        var s = ModeSwitcher(modes: [mode], query: "o")
+
+        let open = s.perform(key: .modeComplete)
+        #expect(open)
+        #expect(s.query == "tw")
+        #expect(s.matches.map(\.row.text) == ["two"])
+
+        mode.answer = .exit
+        let stillOpen = s.perform(key: .modeComplete)
+        #expect(!stillOpen)
+        #expect(!s.isOpen)
+    }
+
+    @Test func modeCompleteHonorsTheSelectedRowAfterResult_view_c_369() {
+        let mode = CompleteMode()
+        mode.selectedRowAfterResult = 2
+        var s = ModeSwitcher(modes: [mode])
+
+        s.perform(key: .modeComplete)
+
+        #expect(s.selectedVisibleIndex == 2)
+    }
+
+    // A mode without completion leaves the switcher as it was.
+    @Test func aModeWithoutCompletionIgnoresModeComplete() {
+        var s = switcher()
+        s.updateQuery("a")
+        s.selectVisibleIndex(1)
+
+        let open = s.perform(key: .modeComplete)
+
+        #expect(open)
+        #expect(a.calls.isEmpty)
+        #expect(s.query == "a")
+        #expect(s.selectedVisibleIndex == 1)
     }
 }

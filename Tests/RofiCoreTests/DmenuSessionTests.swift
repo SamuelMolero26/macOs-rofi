@@ -631,6 +631,26 @@ import Testing
 
         #expect(session.perform(.deleteEntry) == nil)
     }
+
+    // kb-mode-complete quits the view with MENU_COMPLETE, with or without a
+    // visible row (source/view.c:1128-1136). dmenu has no branch for it, so
+    // normal mode finishes with FALSE: no output, exit 1
+    // (source/modes/dmenu.c:906-964, 796-797).
+    @Test func modeCompleteEndsNormalModeLikeCancel_dmenu_c_964() throws {
+        var session = try makeSession()
+
+        #expect(session.perform(.modeComplete) == DmenuCompletion(output: nil, outcome: .cancelled))
+        #expect(session.updateQuery("zzz") == nil)
+        #expect(session.perform(.modeComplete) == DmenuCompletion(output: nil, outcome: .cancelled))
+    }
+
+    // -no-custom/-only-match restart on it (source/modes/dmenu.c:843-902).
+    @Test(arguments: ["-no-custom", "-only-match"])
+    func modeCompleteKeepsOnlySelectedModeOpen_dmenu_c_897(flag: String) throws {
+        var session = try makeSession([flag])
+
+        #expect(session.perform(.modeComplete) == nil)
+    }
 }
 
 extension DmenuStart {

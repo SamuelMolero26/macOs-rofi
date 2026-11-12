@@ -100,8 +100,8 @@ public struct ModeSwitcher {
     /// kb-accept-entry: the selected row, or the query as custom input when
     /// nothing is selected (source/view.c:1308-1319). False once closed.
     @discardableResult
-    public mutating func accept() -> Bool {
-        perform(highlightedSourceIndex == nil ? .customInput : .ok)
+    public mutating func accept(alt: Bool = false) -> Bool {
+        perform(highlightedSourceIndex == nil ? .customInput : .ok, alt: alt)
     }
 
     @discardableResult
@@ -114,14 +114,16 @@ public struct ModeSwitcher {
     @discardableResult
     public mutating func perform(key action: KeyAction) -> Bool {
         switch action {
-        // MENU_OK | MENU_CUSTOM_ACTION; ponytail: MenuAction has no
-        // custom-action flag, so it accepts like Return.
+        // MENU_OK | MENU_CUSTOM_ACTION, or MENU_CUSTOM_INPUT | MENU_CUSTOM_ACTION
+        // with no visible row (view.c:1280-1293).
         case .acceptAlt:
-            return accept()
-        // MENU_CUSTOM_INPUT (| MENU_CUSTOM_ACTION for the alt), no row;
-        // the custom-action flag is dropped as above.
-        case .acceptCustom, .acceptCustomAlt:
+            return accept(alt: true)
+        // MENU_CUSTOM_INPUT, no row (view.c:1295-1301); the alt adds
+        // MENU_CUSTOM_ACTION (1302-1309).
+        case .acceptCustom:
             return perform(.customInput)
+        case .acceptCustomAlt:
+            return perform(.customInput, alt: true)
         // MENU_CUSTOM_COMMAND carries `action - CUSTOM_1` (view.c:1199).
         case .customKey(let n):
             return perform(.customKey(n - 1))
@@ -129,21 +131,34 @@ public struct ModeSwitcher {
         case .deleteEntry:
             guard highlightedSourceIndex != nil else { return isOpen }
             return perform(.deleteEntry)
+        // MENU_COMPLETE with the highlighted source row, or none
+        // (view.c:1128-1136). A mode without completion ignores it.
+        case .modeComplete:
+            guard isOpen else { return false }
+            var input: String? = query
+            let mode = current
+            guard let result = mode.complete(input: &input, selectedRow: highlightedSourceIndex) else { return isOpen }
+            return apply(result, input: input, requestedRow: mode.selectedRowAfterResult)
         }
     }
 
     /// Hands `action` to the current mode and applies its result
     /// (source/rofi.c:235-291). Custom input and cancel carry no row
-    /// (source/view.c:1296-1301). Returns false once the switcher is closed.
+    /// (source/view.c:1296-1301). `alt` is MENU_CUSTOM_ACTION. Returns false
+    /// once the switcher is closed.
     @discardableResult
-    public mutating func perform(_ action: MenuAction) -> Bool {
+    public mutating func perform(_ action: MenuAction, alt: Bool = false) -> Bool {
         guard isOpen else { return false }
         // ponytail: cancel passes no row; upstream passes a stale selected_line.
         let selectedRow = action == .customInput || action == .cancel ? nil : highlightedSourceIndex
         var input: String? = query
         let mode = current
-        let result = mode.result(action, input: &input, selectedRow: selectedRow)
-        let requestedRow = mode.selectedRowAfterResult
+        let result = mode.result(action, alt: alt, input: &input, selectedRow: selectedRow)
+        return apply(result, input: input, requestedRow: mode.selectedRowAfterResult)
+    }
+
+    /// Applies a mode's answer and its rewritten input (source/rofi.c:235-291).
+    private mutating func apply(_ result: ModeResult, input: String?, requestedRow: Int?) -> Bool {
         // source/rofi.c:243-251: nil clears the input, anything else replaces it.
         query = input ?? ""
         switch result {
@@ -193,12 +208,15 @@ public struct ModeSwitcher {
     private mutating func refilter() {
         let mode = current
         let rows = mode.rows
-        let matcher = Matcher(query: query, options: match)
+        // view.c:833-836: the mode's preprocessed query is matched and scored.
+        let pattern = query.isEmpty ? "" : mode.preprocessInput(query)
+        let matcher = Matcher(query: pattern, options: match)
         matches = rows.enumerated().compactMap { index, row in
-            query.isEmpty || mode.matches(row, matcher: matcher) ? DmenuMatch(sourceIndex: index, row: row) : nil
+            query.isEmpty || mode.matches(row, at: index, matcher: matcher)
+                ? DmenuMatch(sourceIndex: index, row: row) : nil
         }
         if sort {
-            matches = sortedByScore(matches, query: query, match: match, method: sortingMethod) {
+            matches = sortedByScore(matches, query: pattern, match: match, method: sortingMethod) {
                 mode.completion(at: $0.sourceIndex)
             }
         }

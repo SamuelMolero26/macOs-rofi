@@ -22,6 +22,10 @@ public struct PathEntry: Equatable, Sendable {
 /// Lists one `$PATH` directory, or nil when it cannot be opened.
 public typealias DirectoryLister = (_ path: String) -> [PathEntry]?
 
+/// Runs `argv` and returns its stdout lines (`execute_generator`,
+/// source/helper.c:562-583), or why it could not.
+public typealias ListGenerator = (_ argv: [String]) -> Result<[String], ApplicationLaunchFailure>
+
 /// `get_apps` without the history and external list (source/modes/run.c:
 /// 245-415): the names found in `$PATH`, sorted by bytes with duplicates
 /// removed. nil when `$PATH` is unset, which leaves the mode with no rows
@@ -73,8 +77,8 @@ public func listDirectoryOnDisk(_ path: String) -> [PathEntry]? {
 /// The `run` mode (source/modes/run.c): the commands found in `$PATH`, the
 /// recently run ones first.
 ///
-/// Discovery, the process launcher and the script writer are injected, so the
-/// mode owns only ordering, history and the menu actions.
+/// Discovery, the list generator, the process launcher and the script writer
+/// are injected, so the mode owns only ordering, history and the menu actions.
 ///
 /// Accepting a row or typed text runs `-run-command`; the terminal action
 /// (MENU_CUSTOM_ACTION, run.c:456) runs `-run-shell-command` through
@@ -84,11 +88,21 @@ public func listDirectoryOnDisk(_ path: String) -> [PathEntry]? {
 /// pipes, `$VAR` and globs stay literal. A row is shell-quoted first
 /// (run.c:355), so a name with blanks stays one argument.
 ///
-/// ponytail: `-run-list-command` (run.c:185-240, 375-377) and the file
-/// completer (MENU_COMPLETE, run.c:462-492, 515-536) are not implemented.
+/// `-run-list-command` (run.c:185-240, 375-377) adds the lines its command
+/// prints. ponytail: an empty line is dropped, where upstream keeps an empty
+/// row (run.c:194).
+///
+/// kb-mode-complete on a row starts the file completer (MENU_COMPLETE,
+/// run.c:459-491, 514-531): the rows, matching, icons and message come from
+/// a file browser until the key is pressed again, and a chosen file runs
+/// `<exec> <g_shell_quote(path)>` like any other command.
+/// ponytail: the completer is always the file browser; upstream picks it with
+/// `-completer-mode` (rofi.c:1413-1421, xrmoptions.c:670-673).
 public final class RunMode: Mode {
     public let name = "run"
-    public private(set) var rows: [Row] = []
+    /// The completer's rows while completing (run.c:445-447), else the commands.
+    public var rows: [Row] { completer?.rows ?? entryRows }
+    private var entryRows: [Row] = []
 
     /// `RunEntry` (run.c:66-75): the shown text and the command it runs.
     private struct Entry {
@@ -97,8 +111,15 @@ public final class RunMode: Mode {
     }
 
     private var entries: [Entry] = [] {
-        didSet { rows = entries.map { Row(parsing: $0.entry) } }
+        didSet { entryRows = entries.map { Row(parsing: $0.entry) } }
     }
+    /// `file_complete` and `completer` (run.c:87-92): non-nil while completing.
+    private var completer: FileBrowserMode?
+    /// The row being completed and the inputs swapped in and out
+    /// (`selected_line`, `old_input`, `old_completer_input`).
+    private var completedRow = 0
+    private var oldInput: String?
+    private var oldCompleterInput: String?
     private let discover: () -> [String]?
     private let history: History?
     private let terminal: String?
@@ -106,17 +127,24 @@ public final class RunMode: Mode {
     private let runShellCommand: String
     private let launcher: CommandLauncher
     private let writeScript: ScriptWriter
-    /// The last failed launch, worded as upstream's error dialog
+    private let listCommand: String?
+    private let generate: ListGenerator
+    private let makeCompleter: (() -> FileBrowserMode)?
+    /// The last failed launch or list command, worded as upstream's error dialog
     /// (helper.c:1426-1434, 136-137); cleared by the next action.
     private var failure: String?
 
     /// `runCommand` and `runShellCommand` default as config/config.c:70,74;
-    /// `terminal` is `-terminal`, nil when unset.
+    /// `terminal` is `-terminal`, nil when unset; `listCommand` is
+    /// `-run-list-command`, nil or empty when unset (config.c:72).
     public init(
         discover: @escaping () -> [String]?, history: History?, terminal: String?,
         runCommand: String = "{cmd}", runShellCommand: String = "{terminal} -e {cmd}",
-        launcher: @escaping CommandLauncher, writeScript: @escaping ScriptWriter
+        launcher: @escaping CommandLauncher, writeScript: @escaping ScriptWriter,
+        listCommand: String? = nil, generate: @escaping ListGenerator = unavailableListGenerator,
+        completer: (() -> FileBrowserMode)? = nil
     ) {
+        makeCompleter = completer
         self.discover = discover
         self.history = history
         self.terminal = terminal
@@ -124,13 +152,59 @@ public final class RunMode: Mode {
         self.runShellCommand = runShellCommand
         self.launcher = launcher
         self.writeScript = writeScript
+        self.listCommand = listCommand
+        self.generate = generate
         load()
     }
 
-    public var message: String? { failure }
+    /// A failure first; while completing, `run_get_message` (run.c:556-572).
+    public var message: String? {
+        if let failure { return failure }
+        guard let completer else { return nil }
+        let header = "File complete for: " + entries[completedRow].entry
+        return completer.message.map { header + "\n" + $0 } ?? header
+    }
 
-    /// `get_apps` (run.c:245-415) without the external list: history first in
-    /// file order, then the PATH names not already in it.
+    /// `run_token_match` (run.c:548-554).
+    public func matches(_ row: Row, matcher: Matcher) -> Bool {
+        completer?.matches(row, matcher: matcher) ?? matcher.matches(row.text)
+    }
+
+    /// `_get_completion` is NULL (run.c:613), so the display value is scored,
+    /// the completer's while completing (run.c:541-543).
+    public func completion(at row: Int) -> String {
+        completer?.completion(at: row) ?? entryRows[row].text
+    }
+
+    /// `_get_icon` while completing (run.c:578-579). ponytail: no icon for a
+    /// command row, where upstream looks up its first word (run.c:589-596).
+    public func iconPath(at row: Int) -> String? { completer?.iconPath(at: row) }
+    public func iconImagePath(at row: Int) -> String? { completer?.iconImagePath(at: row) }
+
+    /// MENU_COMPLETE. A first press on a row saves the input, restores the
+    /// completer's last input and starts a fresh completer (run.c:514-531);
+    /// a press while completing does the reverse (run.c:463-471). Without a
+    /// row it only reloads. nil without a completer.
+    public func complete(input: inout String?, selectedRow: Int?) -> ModeResult? {
+        guard let makeCompleter else { return nil }
+        failure = nil
+        if completer != nil {
+            oldCompleterInput = input
+            input = oldInput
+            completer = nil
+            return .reload
+        }
+        guard let row = selectedRow, entries.indices.contains(row) else { return .reload }
+        completedRow = row
+        oldInput = input
+        input = oldCompleterInput
+        completer = makeCompleter()
+        return .reload
+    }
+
+    /// `get_apps` (run.c:245-415): history first in file order, then the PATH
+    /// names and list lines not already in it, sorted by bytes with
+    /// duplicates removed (376-396).
     private func load() {
         guard let names = discover() else {
             entries = []
@@ -143,7 +217,36 @@ public final class RunMode: Mode {
             return Entry(entry: String(parts[0]), exec: parts.count > 1 ? String(parts[1]) : String(parts[0]))
         }
         let known = Set(recent.map(\.entry))
-        entries = recent + names.filter { !known.contains($0) }.map { Entry(entry: $0, exec: shellQuote($0)) }
+        let others = Set(names.filter { !known.contains($0) } + listLines(skipping: recent.map(\.entry)))
+        // sort_func is g_strcmp0, a byte comparison (166-183).
+        let sorted = others.sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) }
+        entries = recent + sorted.map { Entry(entry: $0, exec: shellQuote($0)) }
+    }
+
+    /// `get_apps_external` (run.c:185-240): the list command's lines, minus
+    /// those equal to a history entry ignoring ASCII case (`strcasecmp`,
+    /// 203-211). A failure becomes the message and adds nothing
+    /// (helper.c:572-578).
+    private func listLines(skipping favorites: [String]) -> [String] {
+        // 375: unset and empty both mean no list command.
+        guard let listCommand, !listCommand.isEmpty else { return [] }
+        let argv: [String]
+        do {
+            // execute_generator passes the command as `{cmd}` (helper.c:564).
+            argv = try parseCommandTemplate(
+                runCommand, values: ["cmd": listCommand, "terminal": terminal ?? TerminalLaunch.defaultTerminal])
+        } catch {
+            failure = (error as? CommandTemplateError)?.message ?? "\(error)"
+            return []
+        }
+        switch generate(argv) {
+        case .success(let lines):
+            let skipped = Set(favorites.map(asciiLowercased))
+            return lines.filter { !$0.isEmpty && !skipped.contains(asciiLowercased($0)) }
+        case .failure(let error):
+            failure = ApplicationLaunchFailure(command: listCommand, reason: error.reason).dialogText
+            return []
+        }
     }
 
     /// `run_mode_result` (run.c:451-540) for the actions without a terminal.
@@ -151,13 +254,20 @@ public final class RunMode: Mode {
         result(action, runInTerminal: false, input: &input, selectedRow: selectedRow)
     }
 
-    /// `run_in_term` is MENU_CUSTOM_ACTION (run.c:456). ponytail: `ModeSwitcher`
-    /// drops that flag today (`MenuAction` has no case for it), so only callers
-    /// of this method can reach the terminal path.
+    /// `run_in_term` is MENU_CUSTOM_ACTION (run.c:456), which the switcher
+    /// passes as `alt` for Shift+Return.
+    public func result(_ action: MenuAction, alt: Bool, input: inout String?, selectedRow: Int?) -> ModeResult {
+        result(action, runInTerminal: alt, input: &input, selectedRow: selectedRow)
+    }
+
     public func result(
         _ action: MenuAction, runInTerminal: Bool, input: inout String?, selectedRow: Int?
     ) -> ModeResult {
         failure = nil
+        if let completer {
+            return completerResult(
+                completer, action, runInTerminal: runInTerminal, input: &input, selectedRow: selectedRow)
+        }
         switch action {
         case .cancel:
             return .exit
@@ -179,6 +289,27 @@ public final class RunMode: Mode {
             }
             return .reload
         }
+    }
+
+    /// `run_mode_result` while completing (run.c:459-491): cancel exits,
+    /// everything else goes to the completer. Its exit with a path runs
+    /// `<exec> <g_shell_quote(path)>` under that same text (480-486); without
+    /// a path it runs the row as it is (476-479).
+    /// ponytail: upstream exits even when that launch fails (485); as on the
+    /// plain path (499-503), the failure is shown and the view stays.
+    private func completerResult(
+        _ completer: FileBrowserMode, _ action: MenuAction, runInTerminal: Bool, input: inout String?,
+        selectedRow: Int?
+    ) -> ModeResult {
+        if action == .cancel { return .exit }
+        let answer = completer.completerResult(action, input: &input, selectedRow: selectedRow)
+        guard answer.result == .exit else { return answer.result }
+        let entry = entries[completedRow]
+        guard let path = answer.path else {
+            return execute(entry.exec, inTerminal: runInTerminal, original: entry.entry) ? .exit : .reload
+        }
+        let command = entry.exec + " " + shellQuote(path)
+        return execute(command, inTerminal: runInTerminal, original: command) ? .exit : .reload
     }
 
     /// `exec_cmd` (run.c:104-140): run, then store the history line on success
