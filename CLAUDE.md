@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to coding agents when working with code in this repository.
 
 ## What this is
 
@@ -46,6 +46,7 @@ Only test the core functinality and test hard, the less but robust test the bett
 - Deliberate simplifications are marked with `ponytail:` comments (e.g. in `Mode.swift`); respect them rather than "fixing" them unasked.
 
 ## Engineering practices
+
 - We're a startup. You're probably used to writing enterprise code - code that tries to handle every possible edge case and has fallbacks for everything. That's not how we do things around here: our number one rule is to keep things simple. We handle ONLY the most important cases.
 
 - We try to only add new functionality that is small (that is, simple and few lines of code) or absolutely necessary. If a change is not small or absolutely necessary, don't make it.
