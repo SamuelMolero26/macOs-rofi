@@ -134,13 +134,6 @@ public struct Keymap: Equatable, Sendable {
             uniqueKeysWithValues: KeyAction.allCases.map { ($0, try! Keymap.parse($0.upstreamBinding)) })
     }
 
-    /// Replaces `action`'s bindings, as `-kb-<name> <binding>` does. An empty
-    /// string unbinds it. On error the old bindings stay.
-    public mutating func rebind(_ action: KeyAction, to binding: String) throws {
-        bindings[action] = try Keymap.parse(binding)
-        strings[action] = binding
-    }
-
     /// `action`'s binding string: the `-kb-<name>` value, else the default.
     public func binding(for action: KeyAction) -> String {
         strings[action] ?? action.upstreamBinding
