@@ -371,8 +371,3 @@ private struct FailureMessage: Error {
     let text: String
     init(_ text: String) { self.text = text }
 }
-
-/// `g_shell_quote`: single quotes, each embedded one as `'\''`.
-private func shellQuote(_ word: String) -> String {
-    "'" + word.replacingOccurrences(of: "'", with: "'\\''") + "'"
-}

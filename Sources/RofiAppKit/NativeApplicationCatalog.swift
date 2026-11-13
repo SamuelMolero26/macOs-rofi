@@ -95,7 +95,7 @@ public final class NativeApplicationCatalog {
         guard workspace.open(url) else {
             return .failure(
                 ApplicationLaunchFailure(
-                    command: "open application '\(shellQuoted(url.path))'",
+                    command: "open application \(shellQuote(url.path))",
                     reason: "NSWorkspace could not open the application"))
         }
         return .success(())
@@ -170,8 +170,4 @@ private func metadataValue(_ key: String, in dictionary: [String: Any]?) -> Stri
 
 private func nonEmptyMetadataValue(_ value: String?) -> String? {
     value?.isEmpty == false ? value : nil
-}
-
-private func shellQuoted(_ value: String) -> String {
-    value.replacingOccurrences(of: "'", with: "'\\''")
 }

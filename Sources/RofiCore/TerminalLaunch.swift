@@ -1,4 +1,5 @@
 import Foundation
+
 /// Spawns one argv directly (no shell). Injected so tests never start a process.
 public typealias CommandLauncher = (_ argv: [String]) -> Result<Void, ApplicationLaunchFailure>
 
@@ -75,9 +76,5 @@ public enum TerminalLaunch {
         var key = terminal.lowercased()
         if key.hasSuffix(".app") { key.removeLast(4) }
         return adapterApps[key]
-    }
-
-    private static func shellQuote(_ word: String) -> String {
-        "'" + word.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }

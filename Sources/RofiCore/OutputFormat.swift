@@ -38,6 +38,6 @@ public enum DmenuOutcome: Equatable, Sendable {
 }
 
 /// `g_shell_quote`: single quotes, with each `'` written as `'\''`.
-private func shellQuote(_ text: String) -> String {
+public func shellQuote(_ text: String) -> String {
     "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'"
 }
