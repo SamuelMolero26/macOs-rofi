@@ -151,7 +151,7 @@ protocol NativeApplicationWorkspace: AnyObject {
 ///
 /// Spotlight broadens discovery beyond standard folders, while the fixed roots
 /// remain a deterministic fallback for unavailable or incomplete indexes.
-public final class NativeApplicationCatalog: ApplicationCatalog {
+public final class NativeApplicationCatalog {
     private let discover: () -> MetadataDiscovery
     private let fallbackRoots: [URL]
     private let scanRoots: ([URL]) -> [URL]
