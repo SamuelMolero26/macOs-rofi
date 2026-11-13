@@ -1,128 +1,5 @@
 import AppKit
-import CoreServices
 import RofiCore
-
-enum MetadataDiscoveryState: Equatable {
-    case completed
-    case timedOut
-    case failed
-}
-
-struct MetadataDiscovery: Equatable {
-    let state: MetadataDiscoveryState
-    let urls: [URL]
-}
-
-protocol ApplicationMetadataQuery: AnyObject {
-    var notificationObject: AnyObject { get }
-
-    func start() -> Bool
-    func disableUpdates()
-    func stop()
-    func resultPaths() -> [String]
-}
-
-typealias MetadataCompletionWaiter = (_ finished: () -> Bool, _ timeout: TimeInterval) -> Bool
-
-struct BoundedMetadataQueryDiscovery {
-    let makeQuery: () -> any ApplicationMetadataQuery
-    let notificationCenter: NotificationCenter
-    let waitForCompletion: MetadataCompletionWaiter
-
-    init(
-        makeQuery: @escaping () -> any ApplicationMetadataQuery = { SystemApplicationMetadataQuery() },
-        notificationCenter: NotificationCenter = .default,
-        waitForCompletion: @escaping MetadataCompletionWaiter = waitForMetadataQueryCompletion
-    ) {
-        self.makeQuery = makeQuery
-        self.notificationCenter = notificationCenter
-        self.waitForCompletion = waitForCompletion
-    }
-
-    func discover(timeout: TimeInterval) -> MetadataDiscovery {
-        let query = makeQuery()
-        let completion = MetadataQueryCompletion()
-        let observer = notificationCenter.addObserver(
-            forName: .NSMetadataQueryDidFinishGathering,
-            object: query.notificationObject,
-            queue: nil
-        ) { _ in
-            completion.finish()
-        }
-        defer { notificationCenter.removeObserver(observer) }
-
-        guard query.start() else {
-            return MetadataDiscovery(state: .failed, urls: [])
-        }
-
-        let completed = waitForCompletion(completion.isFinished, max(0, timeout))
-        query.disableUpdates()
-        let urls = query.resultPaths().compactMap { path -> URL? in
-            guard !path.isEmpty else { return nil }
-            return URL(fileURLWithPath: path)
-        }
-        query.stop()
-        return MetadataDiscovery(state: completed ? .completed : .timedOut, urls: urls)
-    }
-}
-
-private final class MetadataQueryCompletion: @unchecked Sendable {
-    private let lock = NSLock()
-    private var finished = false
-
-    func finish() {
-        lock.lock()
-        finished = true
-        lock.unlock()
-    }
-
-    func isFinished() -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return finished
-    }
-}
-
-private final class SystemApplicationMetadataQuery: ApplicationMetadataQuery {
-    private let query: NSMetadataQuery
-
-    init() {
-        query = NSMetadataQuery()
-        query.searchScopes = [NSMetadataQueryLocalComputerScope]
-        query.predicate = NSPredicate(
-            format: "%K == %@", kMDItemContentType as String, "com.apple.application-bundle")
-    }
-
-    var notificationObject: AnyObject { query }
-
-    func start() -> Bool { query.start() }
-    func disableUpdates() { query.disableUpdates() }
-    func stop() { query.stop() }
-
-    func resultPaths() -> [String] {
-        (0..<query.resultCount).compactMap { index in
-            guard let item = query.result(at: index) as? NSMetadataItem else { return nil }
-            return metadataItemPath { item.value(forAttribute: $0) }
-        }
-    }
-}
-
-func metadataItemPath(valueForAttribute: (String) -> Any?) -> String? {
-    valueForAttribute(kMDItemPath as String) as? String
-}
-
-private func waitForMetadataQueryCompletion(
-    _ finished: () -> Bool, timeout: TimeInterval
-) -> Bool {
-    let deadline = Date().addingTimeInterval(timeout)
-    while !finished() {
-        let now = Date()
-        guard now < deadline else { return false }
-        let nextTurn = min(deadline, now.addingTimeInterval(0.01))
-        RunLoop.current.run(mode: .default, before: nextTurn)
-    }
-    return true
-}
 
 struct ApplicationBundleMetadata: Equatable {
     let identifier: String?
@@ -143,30 +20,24 @@ func applicationBundleMetadata(
 
 protocol NativeApplicationWorkspace: AnyObject {
     func applicationURL(forBundleIdentifier identifier: String) -> URL?
-    func icon(forFile path: String) -> NSImage
     func open(_ url: URL) -> Bool
 }
 
-/// Native macOS application discovery and behavior behind the core catalog seam.
+/// Native macOS application discovery and behavior.
 ///
-/// Spotlight broadens discovery beyond standard folders, while the fixed roots
-/// remain a deterministic fallback for unavailable or incomplete indexes.
+/// Applications are discovered by scanning the fixed application roots.
 public final class NativeApplicationCatalog {
-    private let discover: () -> MetadataDiscovery
-    private let fallbackRoots: [URL]
+    private let roots: [URL]
     private let scanRoots: ([URL]) -> [URL]
     private let readMetadata: (URL) -> ApplicationBundleMetadata?
     private let canonicalize: (URL) -> URL
     private let workspace: any NativeApplicationWorkspace
 
     public convenience init(
-        discoveryTimeout: TimeInterval = 1,
         homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
     ) {
-        let metadataDiscovery = BoundedMetadataQueryDiscovery()
         self.init(
-            discover: { metadataDiscovery.discover(timeout: discoveryTimeout) },
-            fallbackRoots: Self.applicationRoots(homeDirectory: homeDirectory),
+            roots: Self.applicationRoots(homeDirectory: homeDirectory),
             scanRoots: scanApplicationRoots,
             readMetadata: readApplicationBundleMetadata,
             canonicalize: canonicalApplicationURL,
@@ -174,15 +45,13 @@ public final class NativeApplicationCatalog {
     }
 
     init(
-        discover: @escaping () -> MetadataDiscovery,
-        fallbackRoots: [URL],
+        roots: [URL],
         scanRoots: @escaping ([URL]) -> [URL],
         readMetadata: @escaping (URL) -> ApplicationBundleMetadata?,
         canonicalize: @escaping (URL) -> URL,
         workspace: any NativeApplicationWorkspace
     ) {
-        self.discover = discover
-        self.fallbackRoots = fallbackRoots
+        self.roots = roots
         self.scanRoots = scanRoots
         self.readMetadata = readMetadata
         self.canonicalize = canonicalize
@@ -190,12 +59,11 @@ public final class NativeApplicationCatalog {
     }
 
     public func applications() -> [ApplicationRecord] {
-        let candidates = discover().urls + scanRoots(fallbackRoots)
         var applications: [ApplicationRecord] = []
         var seenPaths: Set<String> = []
         var seenIdentifiers: Set<String> = []
 
-        for candidate in candidates {
+        for candidate in scanRoots(roots) {
             guard let metadata = readMetadata(candidate) else { continue }
             let workspaceURL = metadata.identifier.flatMap {
                 workspace.applicationURL(forBundleIdentifier: $0)
@@ -217,12 +85,6 @@ public final class NativeApplicationCatalog {
                     iconPath: applicationURL.path))
         }
         return applications
-    }
-
-    /// Loads the Finder icon through the same `NSWorkspace` behavior used by
-    /// the existing panel's path-based icon renderer.
-    public func icon(for application: ApplicationRecord) -> NSImage {
-        workspace.icon(forFile: resolvedURL(for: application).path)
     }
 
     /// Opens an application through public `NSWorkspace` behavior.
@@ -262,7 +124,6 @@ private final class SystemApplicationWorkspace: NativeApplicationWorkspace {
         workspace.urlForApplication(withBundleIdentifier: identifier)
     }
 
-    func icon(forFile path: String) -> NSImage { workspace.icon(forFile: path) }
     func open(_ url: URL) -> Bool { workspace.open(url) }
 }
 
