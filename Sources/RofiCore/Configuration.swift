@@ -36,20 +36,9 @@ public struct RasiConfigurationEnvironment: @unchecked Sendable {
     }
 }
 
-public struct RasiConfigurationOverrides: Equatable, Sendable {
-    public let lines: Int?
-    public let location: RasiLocation?
-
-    public init(lines: Int? = nil, location: RasiLocation? = nil) {
-        self.lines = lines
-        self.location = location
-    }
-}
-
 public struct RasiConfiguration: Sendable {
     public let resolution: RasiResolution
     public let warnings: [RasiDiagnostic]
-    public let overrides: RasiConfigurationOverrides
 
     public var canonicalRasi: String {
         CanonicalRasi(resolution: resolution).text
@@ -109,15 +98,14 @@ public struct RasiConfigurationLoader: Sendable {
             rootStatements.append("@import \"\(token)\"")
         }
 
-        let overrides = commandLineOverrides(arguments)
-        if let declaration = overrideBlock(arguments: arguments, overrides: overrides) {
+        if let declaration = overrideBlock(arguments) {
             rootStatements.append(declaration)
         }
 
         let root = RasiSource(identity: "<configuration>", text: rootStatements.joined(separator: "\n"))
         let resolution = try RasiResolver(loader: store.load).resolveComposite(root)
         let warnings = loaderWarnings + resolution.warnings
-        return RasiConfiguration(resolution: resolution, warnings: warnings, overrides: overrides)
+        return RasiConfiguration(resolution: resolution, warnings: warnings)
     }
 }
 
@@ -317,43 +305,20 @@ private struct CanonicalRasi {
     }
 }
 
-private func commandLineOverrides(_ arguments: Arguments) -> RasiConfigurationOverrides {
+private func overrideBlock(_ arguments: Arguments) -> String? {
+    var declarations: [String] = []
     // Like DmenuPipeline: dmenu's default `-l 15` overrides nothing, and the
     // theme value is a signed int, so a negative one shows no rows
     // (source/modes/dmenu.c:575-590).
-    let lines = arguments.uint("-l").flatMap { value in
-        value == 15 ? nil : max(0, Int(Int32(truncatingIfNeeded: value)))
+    if let value = arguments.uint("-l"), value != 15 {
+        declarations.append("lines: \(max(0, Int(Int32(truncatingIfNeeded: value))));")
     }
-    let location: RasiLocation?
-    if let value = arguments.string("-location") {
-        location = parseLocation(value)
-    } else if arguments.has("-b") {
-        location = .south
-    } else {
-        location = nil
-    }
-    return RasiConfigurationOverrides(lines: lines, location: location)
-}
-
-private func overrideBlock(arguments: Arguments, overrides: RasiConfigurationOverrides) -> String? {
-    var declarations: [String] = []
-    if let lines = overrides.lines { declarations.append("lines: \(lines);") }
     if let rawLocation = arguments.string("-location") {
         declarations.append("location: \(rawLocation);")
-    } else if let location = overrides.location {
-        declarations.append("location: \(location.rawValue);")
+    } else if arguments.has("-b") {
+        declarations.append("location: \(RasiLocation.south.rawValue);")
     }
     return declarations.isEmpty ? nil : "configuration { \(declarations.joined(separator: " ")) }"
-}
-
-private func parseLocation(_ value: String) -> RasiLocation? {
-    let normalized = value.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ")
-    if let location = RasiLocation(rawValue: normalized) { return location }
-    guard let index = Int(normalized) else { return nil }
-    let locations: [RasiLocation] = [
-        .center, .northWest, .north, .northEast, .east, .southEast, .south, .southWest, .west,
-    ]
-    return locations.indices.contains(index) ? locations[index] : nil
 }
 
 private func selectorOrder(_ left: RasiSelector, _ right: RasiSelector) -> Bool {

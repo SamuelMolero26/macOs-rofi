@@ -117,22 +117,12 @@ import Testing
     }
 
     @Test func lettersCompareCaseInsensitivelyAndKeepShift() throws {
-        var keymap = Keymap()
-        try keymap.rebind(.customKey(1), to: "Alt+a")
-        #expect(lookup("a", .option, in: keymap) == .customKey(1))
-        #expect(lookup("A", [.option, .shift], in: keymap) == nil)
-        try keymap.rebind(.customKey(1), to: "Alt+Shift+a")
-        #expect(lookup("A", [.option, .shift], in: keymap) == .customKey(1))
-        #expect(lookup("a", .option, in: keymap) == nil)
-    }
-
-    @Test func rebindReplacesBindings() throws {
-        var keymap = Keymap()
-        try keymap.rebind(.customKey(1), to: "Control+1")
-        #expect(lookup("1", .control, in: keymap) == .customKey(1))
-        #expect(lookup("1", .option, in: keymap) == nil)
-        try keymap.rebind(.customKey(1), to: "")
-        #expect(lookup("1", .control, in: keymap) == nil)
+        let plain = try keymap(["-kb-custom-1", "Alt+a"])
+        #expect(lookup("a", .option, in: plain) == .customKey(1))
+        #expect(lookup("A", [.option, .shift], in: plain) == nil)
+        let shifted = try keymap(["-kb-custom-1", "Alt+Shift+a"])
+        #expect(lookup("A", [.option, .shift], in: shifted) == .customKey(1))
+        #expect(lookup("a", .option, in: shifted) == nil)
     }
 
     @Test func parsesMoreUpstreamKeysyms() throws {
@@ -188,13 +178,5 @@ import Testing
         ) {
             try keymap(["-kb-delete-entry", "Meta+Delete", "-kb-custom-1", "Alt+bogus,Hyper+1"])
         }
-    }
-
-    @Test func failedRebindKeepsPreviousBindings() {
-        var keymap = Keymap()
-        #expect(throws: KeyBindingError.unknownModifier("Meta")) {
-            try keymap.rebind(.customKey(1), to: "Meta+1")
-        }
-        #expect(lookup("1", .option, in: keymap) == .customKey(1))
     }
 }

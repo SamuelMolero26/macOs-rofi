@@ -3,8 +3,6 @@ import Foundation
 public struct RasiDocument: Sendable {
     public let source: RasiSource
     let statements: [RasiStatement]
-
-    public var statementCount: Int { statements.count }
 }
 
 public struct RasiParser: Sendable {
