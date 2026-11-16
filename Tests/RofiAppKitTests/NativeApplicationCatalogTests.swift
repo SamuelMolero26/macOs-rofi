@@ -1,119 +1,41 @@
 import AppKit
-import CoreServices
 import RofiCore
 import Testing
 
 @testable import RofiAppKit
 
 @Suite final class NativeApplicationCatalogTests {
-    @Test func metadataDiscoveryCompletesFromNotificationAndReadsPaths() {
-        let center = NotificationCenter()
-        let query = FakeMetadataQuery(
-            center: center,
-            paths: ["/Applications/First.app", "/System/Applications/Second.app"],
-            postsCompletion: true)
-        var observedTimeout: TimeInterval?
-        let discovery = BoundedMetadataQueryDiscovery(
-            makeQuery: { query }, notificationCenter: center,
-            waitForCompletion: { finished, timeout in
-                observedTimeout = timeout
-                return finished()
-            })
-
-        let result = discovery.discover(timeout: 0.75)
-
-        #expect(result.state == .completed)
-        #expect(result.urls.map(\.path) == query.paths)
-        #expect(observedTimeout == 0.75)
-        #expect(query.didStart)
-        #expect(query.didDisableUpdates)
-        #expect(query.didStop)
-    }
-
-    @Test func metadataDiscoveryTimesOutAndReturnsItsPartialPaths() {
-        let center = NotificationCenter()
-        let query = FakeMetadataQuery(
-            center: center, paths: ["/Applications/Partial.app"], postsCompletion: false)
-        let discovery = BoundedMetadataQueryDiscovery(
-            makeQuery: { query }, notificationCenter: center,
-            waitForCompletion: { finished, _ in
-                #expect(!finished())
-                return false
-            })
-
-        let result = discovery.discover(timeout: 0.01)
-
-        #expect(result.state == .timedOut)
-        #expect(result.urls.map(\.path) == query.paths)
-        #expect(query.didDisableUpdates)
-        #expect(query.didStop)
-    }
-
-    @Test func metadataDiscoveryReportsStartFailureWithoutReadingResults() {
-        let center = NotificationCenter()
-        let query = FakeMetadataQuery(
-            center: center, paths: ["/Applications/Ignored.app"], postsCompletion: false,
-            starts: false)
-        var waited = false
-        let discovery = BoundedMetadataQueryDiscovery(
-            makeQuery: { query }, notificationCenter: center,
-            waitForCompletion: { _, _ in
-                waited = true
-                return true
-            })
-
-        let result = discovery.discover(timeout: 1)
-
-        #expect(result == MetadataDiscovery(state: .failed, urls: []))
-        #expect(!waited)
-        #expect(!query.didDisableUpdates)
-        #expect(!query.didStop)
-    }
-
-    @Test func metadataResultReadsThePublicPathAttribute() {
-        var requestedAttribute: String?
-
-        let path = metadataItemPath { attribute in
-            requestedAttribute = attribute
-            return "/Applications/Example.app"
-        }
-
-        #expect(requestedAttribute == kMDItemPath as String)
-        #expect(path == "/Applications/Example.app")
-    }
-
-    @Test func catalogMergesFallbackAndDeduplicatesCanonicalPathsAndBundleIdentifiers() {
-        let spotlight = URL(fileURLWithPath: "/Spotlight/Primary.app")
+    @Test func catalogDeduplicatesCanonicalPathsAndBundleIdentifiers() {
+        let primary = URL(fileURLWithPath: "/Roots/Primary.app")
         let canonicalAlias = URL(fileURLWithPath: "/Roots/Primary Alias.app")
         let identifierDuplicate = URL(fileURLWithPath: "/Roots/Primary Copy.app")
-        let fallbackOnly = URL(fileURLWithPath: "/Roots/Fallback.app")
+        let other = URL(fileURLWithPath: "/Roots/Other.app")
         let canonicalPrimary = URL(fileURLWithPath: "/Canonical/Primary.app")
         let workspace = FakeWorkspace()
         var scannedRoots: [URL] = []
 
         let catalog = NativeApplicationCatalog(
-            discover: { MetadataDiscovery(state: .completed, urls: [spotlight]) },
-            fallbackRoots: [URL(fileURLWithPath: "/Roots")],
+            roots: [URL(fileURLWithPath: "/Roots")],
             scanRoots: { roots in
                 scannedRoots = roots
-                return [canonicalAlias, identifierDuplicate, fallbackOnly]
+                return [primary, canonicalAlias, identifierDuplicate, other]
             },
             readMetadata: { url in
                 switch url.path {
-                case spotlight.path, canonicalAlias.path, identifierDuplicate.path:
+                case primary.path, canonicalAlias.path, identifierDuplicate.path:
                     return ApplicationBundleMetadata(
                         identifier: "com.example.primary", localizedDisplayName: url.lastPathComponent,
                         bundleName: nil)
-                case fallbackOnly.path:
+                case other.path:
                     return ApplicationBundleMetadata(
-                        identifier: "com.example.fallback", localizedDisplayName: "Fallback",
+                        identifier: "com.example.other", localizedDisplayName: "Other",
                         bundleName: nil)
                 default:
                     return nil
                 }
             },
             canonicalize: { url in
-                if url == spotlight || url == canonicalAlias { return canonicalPrimary }
+                if url == primary || url == canonicalAlias { return canonicalPrimary }
                 return url
             },
             workspace: workspace)
@@ -121,33 +43,9 @@ import Testing
         let applications = catalog.applications()
 
         #expect(scannedRoots.map(\.path) == ["/Roots"])
-        #expect(applications.map(\.identifier) == ["com.example.primary", "com.example.fallback"])
-        #expect(applications.map(\.bundlePath) == [canonicalPrimary.path, fallbackOnly.path])
+        #expect(applications.map(\.identifier) == ["com.example.primary", "com.example.other"])
+        #expect(applications.map(\.bundlePath) == [canonicalPrimary.path, other.path])
         #expect(applications.first?.displayName == "Primary.app")
-    }
-
-    @Test(arguments: [MetadataDiscoveryState.timedOut, .failed])
-    func incompleteOrFailedDiscoveryStillUsesFixedRootFallback(state: MetadataDiscoveryState) {
-        let partial = URL(fileURLWithPath: "/Spotlight/Partial.app")
-        let fallback = URL(fileURLWithPath: "/Applications/Fallback.app")
-        let catalog = NativeApplicationCatalog(
-            discover: {
-                MetadataDiscovery(state: state, urls: state == .timedOut ? [partial] : [])
-            },
-            fallbackRoots: [URL(fileURLWithPath: "/Applications")],
-            scanRoots: { _ in [fallback] },
-            readMetadata: { url in
-                ApplicationBundleMetadata(
-                    identifier: "id:\(url.path)", localizedDisplayName: url.lastPathComponent,
-                    bundleName: nil)
-            },
-            canonicalize: { $0 }, workspace: FakeWorkspace())
-
-        let applications = catalog.applications()
-
-        #expect(
-            applications.map(\.bundlePath)
-                == (state == .timedOut ? [partial.path, fallback.path] : [fallback.path]))
     }
 
     @Test func localizedBundleMetadataUsesNativeNamePrecedence() {
@@ -199,25 +97,6 @@ import Testing
         #expect(workspace.requestedIdentifiers == ["com.example.app"])
     }
 
-    @Test func iconUsesWorkspaceResolutionWithoutChangingPathBasedRendering() throws {
-        let original = URL(fileURLWithPath: "/Volumes/Other/Example.app")
-        let resolved = URL(fileURLWithPath: "/Applications/Example.app")
-        let workspace = FakeWorkspace()
-        workspace.resolvedApplications["com.example.app"] = resolved
-        let expectedIcon = NSImage(size: NSSize(width: 24, height: 24))
-        workspace.icon = expectedIcon
-        let catalog = makeCatalog(urls: [], metadata: [:], workspace: workspace)
-        let application = ApplicationRecord(
-            identifier: "com.example.app", localizedDisplayName: "Example", bundleName: nil,
-            bundlePath: original.path)
-
-        let icon = catalog.icon(for: application)
-
-        #expect(icon === expectedIcon)
-        #expect(workspace.iconPaths == [resolved.path])
-        #expect(application.iconPath == original.path)
-    }
-
     @Test func successfulLaunchUsesResolvedWorkspaceURLWithoutOpeningInTheTest() {
         let original = URL(fileURLWithPath: "/Volumes/Other/Example.app")
         let resolved = URL(fileURLWithPath: "/Applications/Example.app")
@@ -263,60 +142,20 @@ import Testing
         urls: [URL], metadata: [String: ApplicationBundleMetadata], workspace: FakeWorkspace
     ) -> NativeApplicationCatalog {
         NativeApplicationCatalog(
-            discover: { MetadataDiscovery(state: .completed, urls: urls) }, fallbackRoots: [],
-            scanRoots: { _ in [] }, readMetadata: { metadata[$0.path] }, canonicalize: { $0 },
+            roots: [], scanRoots: { _ in urls }, readMetadata: { metadata[$0.path] }, canonicalize: { $0 },
             workspace: workspace)
     }
-}
-
-private final class FakeMetadataQuery: ApplicationMetadataQuery {
-    let center: NotificationCenter
-    let notificationObject: AnyObject = NSObject()
-    let paths: [String]
-    let postsCompletion: Bool
-    let starts: Bool
-    var didStart = false
-    var didDisableUpdates = false
-    var didStop = false
-
-    init(
-        center: NotificationCenter, paths: [String], postsCompletion: Bool, starts: Bool = true
-    ) {
-        self.center = center
-        self.paths = paths
-        self.postsCompletion = postsCompletion
-        self.starts = starts
-    }
-
-    func start() -> Bool {
-        didStart = true
-        if postsCompletion {
-            center.post(name: .NSMetadataQueryDidFinishGathering, object: notificationObject)
-        }
-        return starts
-    }
-
-    func disableUpdates() { didDisableUpdates = true }
-    func stop() { didStop = true }
-    func resultPaths() -> [String] { paths }
 }
 
 private final class FakeWorkspace: NativeApplicationWorkspace {
     var resolvedApplications: [String: URL] = [:]
     var requestedIdentifiers: [String] = []
-    var icon = NSImage(size: NSSize(width: 16, height: 16))
-    var iconPaths: [String] = []
     var openResult = false
     var openedURLs: [URL] = []
 
     func applicationURL(forBundleIdentifier identifier: String) -> URL? {
         requestedIdentifiers.append(identifier)
         return resolvedApplications[identifier]
-    }
-
-    func icon(forFile path: String) -> NSImage {
-        iconPaths.append(path)
-        return icon
     }
 
     func open(_ url: URL) -> Bool {

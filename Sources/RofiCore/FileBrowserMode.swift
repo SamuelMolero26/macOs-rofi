@@ -72,24 +72,9 @@ public struct DiskFileSystem: FileBrowserFileSystem {
     }
 }
 
-/// A launch that failed: the command as upstream words it and why
-/// (source/helper.c:1426-1434).
-public struct FileBrowserOpenFailure: Error, Equatable, Sendable {
-    public var command: String
-    public var reason: String
-
-    public init(command: String, reason: String) {
-        self.command = command
-        self.reason = reason
-    }
-
-    /// The error dialog text (helper.c:1428-1430), its markup rendered away.
-    public var dialogText: String { "Failed to execute: '\(command)'\nError: '\(reason)'" }
-}
-
 /// Opens `path` the way the browser's `command` does: `path` as the argument,
 /// run from `directory` (filebrowser.c:510-519).
-public typealias FileBrowserOpener = (_ path: String, _ directory: String) -> Result<Void, FileBrowserOpenFailure>
+public typealias FileBrowserOpener = (_ path: String, _ directory: String) -> Result<Void, ApplicationLaunchFailure>
 
 /// Runs `/usr/bin/open path` from `directory`. Upstream's g_spawn_async only
 /// fails when the spawn does (helper.c:1424-1434); `open` hands off to Launch
@@ -97,9 +82,9 @@ public typealias FileBrowserOpener = (_ path: String, _ directory: String) -> Re
 /// too: a missing file or one no app can open fails here, not silently.
 /// ponytail: blocks the caller until `open` exits; it does not wait for the
 /// app it launches.
-public func openWithSystemOpener(path: String, directory: String) -> Result<Void, FileBrowserOpenFailure> {
+public func openWithSystemOpener(path: String, directory: String) -> Result<Void, ApplicationLaunchFailure> {
     // filebrowser.c:512-513: the command is `command` plus g_shell_quote(path).
-    let command = "/usr/bin/open '" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    let command = "/usr/bin/open " + shellQuote(path)
     let process = Process()
     let errors = Pipe()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
@@ -111,14 +96,14 @@ public func openWithSystemOpener(path: String, directory: String) -> Result<Void
     do {
         try process.run()
     } catch {
-        return .failure(FileBrowserOpenFailure(command: command, reason: error.localizedDescription))
+        return .failure(ApplicationLaunchFailure(command: command, reason: error.localizedDescription))
     }
     let output = errors.fileHandleForReading.readDataToEndOfFile()
     process.waitUntilExit()
     guard process.terminationReason == .exit, process.terminationStatus == 0 else {
         let text = String(decoding: output, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         let reason = text.isEmpty ? "exited with status \(process.terminationStatus)" : text
-        return .failure(FileBrowserOpenFailure(command: command, reason: reason))
+        return .failure(ApplicationLaunchFailure(command: command, reason: reason))
     }
     return .success(())
 }

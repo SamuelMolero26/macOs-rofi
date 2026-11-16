@@ -40,7 +40,7 @@ private struct Opened: Equatable {
     private let system = FakeFileSystem()
     private var opened: [Opened] = []
     /// What the injected opener answers.
-    private var openResult: Result<Void, FileBrowserOpenFailure> = .success(())
+    private var openResult: Result<Void, ApplicationLaunchFailure> = .success(())
 
     init() {
         system.contents["/home/u"] = [
@@ -175,7 +175,7 @@ private struct Opened: Equatable {
     // reported worded as upstream's error dialog; here it is the message and
     // the view stays open on the same directory.
     @Test func failedOpenIsReportedAndStaysOpen_helper_c_1426() {
-        openResult = .failure(FileBrowserOpenFailure(command: "/usr/bin/open '/home/u/zeta.txt'", reason: "boom"))
+        openResult = .failure(ApplicationLaunchFailure(command: "/usr/bin/open '/home/u/zeta.txt'", reason: "boom"))
         let mode = make()
         let (result, _) = act(mode, .ok, row: row(mode, "zeta.txt"))
         #expect(result == .reload)
