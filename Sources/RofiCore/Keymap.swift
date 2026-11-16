@@ -1,9 +1,10 @@
 import Foundation
 
-/// The key actions this port binds beyond plain accept, cancel and movement:
-/// rofi's ACCEPT_CUSTOM, ACCEPT_CUSTOM_ALT, ACCEPT_ALT, DELETE_ENTRY,
-/// CUSTOM_1..19 and MODE_COMPLETE (include/keyb.h, source/keyb.c:119-146,
-/// 216-291).
+/// The key actions this port binds beyond plain accept, cancel and single-row
+/// movement: rofi's ACCEPT_CUSTOM, ACCEPT_CUSTOM_ALT, ACCEPT_ALT,
+/// DELETE_ENTRY, MODE_COMPLETE, ROW_TAB, PAGE_PREV, PAGE_NEXT, ROW_FIRST,
+/// ROW_LAST, CUSTOM_1..19 and SELECT_ELEMENT_1..10 (include/keyb.h,
+/// source/keyb.c:119-191, 216-331).
 public enum KeyAction: Hashable, Sendable, CaseIterable {
     case acceptCustom
     case acceptCustomAlt
@@ -13,10 +14,24 @@ public enum KeyAction: Hashable, Sendable, CaseIterable {
     case customKey(Int)
     /// `kb-mode-complete`: MENU_COMPLETE (source/view.c:1128-1136).
     case modeComplete
+    /// The panel moves the selection for these; the models never see them.
+    case rowTab, pagePrev, pageNext, rowFirst, rowLast
+    /// `kb-select-N`, with N in 1...10: accepts the Nth visible row (source/view.c:1157-1174).
+    case selectRow(Int)
 
     /// In source/keyb.c's binding order.
     public static let allCases: [KeyAction] =
-        [.acceptCustom, .acceptCustomAlt, .acceptAlt, .deleteEntry, .modeComplete] + (1...19).map { .customKey($0) }
+        [.acceptCustom, .acceptCustomAlt, .acceptAlt, .deleteEntry, .modeComplete]
+        + [.rowTab, .pagePrev, .pageNext, .rowFirst, .rowLast]
+        + (1...19).map { .customKey($0) } + (1...10).map { .selectRow($0) }
+
+    /// Moves or accepts by row position, which only the panel knows.
+    public var isNavigation: Bool {
+        switch self {
+        case .rowTab, .pagePrev, .pageNext, .rowFirst, .rowLast, .selectRow: true
+        default: false
+        }
+    }
 
     /// The upstream option name, used as `-kb-<name>` on the command line.
     public var optionName: String {
@@ -27,6 +42,12 @@ public enum KeyAction: Hashable, Sendable, CaseIterable {
         case .deleteEntry: "kb-delete-entry"
         case .customKey(let n): "kb-custom-\(n)"
         case .modeComplete: "kb-mode-complete"
+        case .rowTab: "kb-row-tab"
+        case .pagePrev: "kb-page-prev"
+        case .pageNext: "kb-page-next"
+        case .rowFirst: "kb-row-first"
+        case .rowLast: "kb-row-last"
+        case .selectRow(let n): "kb-select-\(n)"
         }
     }
 
@@ -35,7 +56,9 @@ public enum KeyAction: Hashable, Sendable, CaseIterable {
         self = action
     }
 
-    /// The default binding string, copied from source/keyb.c:119-146, 216-291.
+    /// The default binding string, copied from source/keyb.c:119-191, 216-331.
+    /// ponytail: Home and End drop upstream's KP_Home and KP_End, which Mac
+    /// keyboards lack.
     public var upstreamBinding: String {
         switch self {
         case .acceptCustom: "Control+Return"
@@ -45,10 +68,16 @@ public enum KeyAction: Hashable, Sendable, CaseIterable {
         case .customKey(let n) where n <= 10: "Alt+\(n % 10)"
         case .customKey(let n): "Alt+" + Self.shiftedDigitKeysyms[n - 11]
         case .modeComplete: "Control+l"
+        case .rowTab: ""
+        case .pagePrev: "Page_Up"
+        case .pageNext: "Page_Down"
+        case .rowFirst: "Home"
+        case .rowLast: "End"
+        case .selectRow(let n): "Super+\(n % 10)"
         }
     }
 
-    /// The binding's description in source/keyb.c:119-146, 216-291.
+    /// The binding's description in source/keyb.c:119-191, 216-331.
     public var comment: String {
         switch self {
         case .acceptCustom, .acceptCustomAlt: "Use entered text as command (in ssh/run modes)"
@@ -56,6 +85,12 @@ public enum KeyAction: Hashable, Sendable, CaseIterable {
         case .deleteEntry: "Delete entry from history"
         case .customKey(let n): "Custom keybinding \(n)"
         case .modeComplete: "Start completion for mode."
+        case .rowTab: "Go to next row, if one left, accept it, if no left next mode."
+        case .pagePrev: "Go to the previous page"
+        case .pageNext: "Go to the next page"
+        case .rowFirst: "Go to the first entry"
+        case .rowLast: "Go to the last entry"
+        case .selectRow(let n): "Select row \(n)"
         }
     }
 

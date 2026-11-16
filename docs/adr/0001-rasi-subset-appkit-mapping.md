@@ -164,7 +164,8 @@ The value conversions are:
 
 - Rasi `px` is one AppKit logical point. AppKit then handles backing scale.
 - `em` uses the resolved font's line height; `ch` uses the width of the `0`
-  glyph; `%` uses the relevant visible-screen dimension.
+  glyph; `%` uses the relevant visible-screen dimension. The visible screen is
+  the work area ADR 0002 selects (amended 2026-11-16).
 - Width percentages use visible-screen width. Horizontal inset percentages use
   visible-screen width; vertical inset percentages use visible-screen height.
 - Width is clamped to the visible frame after conversion. Negative width,
@@ -260,7 +261,8 @@ This ADR does not implement:
   custom widget creation.
 - Plugins, script execution, command interpolation, or remote theme loading.
 - X11/Wayland-only semantics such as window IDs, compositor transparency,
-  monitor selectors, grabs, DPI backends, or layer-shell placement.
+  grabs, DPI backends, or layer-shell placement. Monitor selectors are mapped
+  to `NSScreen` by ADR 0002 (amended 2026-11-16).
 - Images, gradients, cursors, media queries, environment-value functions,
   `calc(...)`, animation, rounded corners, shadows, or physical `mm` units.
 - Color syntaxes beyond the named, hex, `rgb`, and `rgba` forms listed above,

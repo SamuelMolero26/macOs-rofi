@@ -20,7 +20,21 @@ import Testing
         #expect(KeyAction.customKey(1).optionName == "kb-custom-1")
         #expect(KeyAction.customKey(19).optionName == "kb-custom-19")
         #expect(KeyAction.modeComplete.optionName == "kb-mode-complete")
-        #expect(KeyAction.allCases.count == 24)
+        #expect(KeyAction.pagePrev.optionName == "kb-page-prev")
+        #expect(KeyAction.selectRow(10).optionName == "kb-select-10")
+        #expect(KeyAction.allCases.count == 39)
+    }
+
+    // source/keyb.c:164-191, 293-331, minus the keypad keys Macs lack.
+    @Test func navigationDefaultsFollowUpstream() {
+        #expect(lookup("\u{F72C}") == .pagePrev)
+        #expect(lookup("\u{F72D}") == .pageNext)
+        #expect(lookup("\u{F729}") == .rowFirst)
+        #expect(lookup("\u{F72B}") == .rowLast)
+        #expect(lookup("1", .command) == .selectRow(1))
+        #expect(lookup("0", .command) == .selectRow(10))
+        #expect(KeyAction.rowTab.upstreamBinding == "")
+        #expect(KeyAction.allCases.filter(\.isNavigation).count == 15)
     }
 
     // source/keyb.c:143-146: MODE_COMPLETE, "Start completion for mode.".
@@ -103,7 +117,6 @@ import Testing
         #expect(lookup("1", .option) == .customKey(1))
         #expect(lookup("9", .option) == .customKey(9))
         #expect(lookup("0", .option) == .customKey(10))
-        #expect(lookup("1", .command) == nil)
         #expect(lookup("1", [.option, .control]) == nil)
         #expect(lookup("1") == nil)
     }

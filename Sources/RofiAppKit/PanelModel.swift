@@ -49,6 +49,39 @@ enum PanelUpdate {
     func switchTo(_ index: Int) -> PanelUpdate
 }
 
+extension PanelModel {
+    /// A navigation key (`KeyAction.isNavigation`). `pageSize` is the rows on
+    /// screen, listview's max_elements; `repeatedTab` is ROW_TAB right after
+    /// ROW_TAB. Moves return `.none` and leave the redraw to the caller.
+    func navigate(_ action: KeyAction, pageSize: Int, repeatedTab: Bool) -> PanelUpdate {
+        let count = matches.count
+        switch action {
+        // source/view.c:630-648: one row accepts, an empty list tabbed twice
+        // goes to the next mode, anything else moves down.
+        case .rowTab:
+            if count == 1 { return accept() }
+            if count == 0, repeatedTab { return switchMode(by: 1) }
+            moveSelection(by: 1)
+        // Pages clamp and never cycle (source/widgets/listview.c:1029-1075).
+        case .pagePrev, .pageNext:
+            guard let current = selectedVisibleIndex else { return .none }
+            let page = max(pageSize, 1) * (action == .pagePrev ? -1 : 1)
+            selectVisibleIndex(min(max(current + page, 0), count - 1))
+        case .rowFirst, .rowLast:
+            guard count > 0 else { return .none }
+            selectVisibleIndex(action == .rowFirst ? 0 : count - 1)
+        // SELECT_ELEMENT_N accepts the Nth visible row, if there is one.
+        case .selectRow(let n):
+            guard n <= count else { return .none }
+            selectVisibleIndex(n - 1)
+            return accept()
+        default:
+            break
+        }
+        return .none
+    }
+}
+
 /// dmenu's session, which ends with the completion `runDmenuPanel` returns.
 @MainActor final class DmenuPanelModel: PanelModel {
     private var session: DmenuSession

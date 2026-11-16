@@ -193,6 +193,8 @@ public struct DmenuSession: Sendable {
         // (source/modes/dmenu.c:843-902, 906-964).
         case .modeComplete:
             return pipeline.allowsCustomInput ? DmenuCompletion(output: nil, outcome: .cancelled) : nil
+        case .rowTab, .pagePrev, .pageNext, .rowFirst, .rowLast, .selectRow:
+            return nil
         }
     }
 
