@@ -19,7 +19,23 @@ import Testing
         #expect(KeyAction.deleteEntry.optionName == "kb-delete-entry")
         #expect(KeyAction.customKey(1).optionName == "kb-custom-1")
         #expect(KeyAction.customKey(19).optionName == "kb-custom-19")
-        #expect(KeyAction.allCases.count == 23)
+        #expect(KeyAction.modeComplete.optionName == "kb-mode-complete")
+        #expect(KeyAction.allCases.count == 24)
+    }
+
+    // source/keyb.c:143-146: MODE_COMPLETE, "Start completion for mode.".
+    @Test func modeCompleteDefaultsToControlL_keyb_c_143() {
+        #expect(KeyAction.modeComplete.upstreamBinding == "Control+l")
+        #expect(KeyAction.modeComplete.comment == "Start completion for mode.")
+        #expect(lookup("l", .control) == .modeComplete)
+        #expect(lookup("l") == nil)
+    }
+
+    @Test func modeCompleteCanBeRebound_keyb_c_416() throws {
+        let keymap = try keymap(["-kb-mode-complete", "Control+Tab"])
+
+        #expect(lookup("\t", .control, in: keymap) == .modeComplete)
+        #expect(lookup("l", .control, in: keymap) == nil)
     }
 
     @Test func actionFromOptionName() {

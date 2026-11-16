@@ -37,8 +37,7 @@ public enum ModeResult: Equatable, Sendable {
 /// reference: `result` changes what `rows` returns next (a script mode re-runs
 /// its script), and one mode can sit in the switcher more than once.
 ///
-/// ponytail: no preprocess_input yet; icons are file paths only, no theme icon
-/// names.
+/// ponytail: icons are file paths only, no theme icon names.
 public protocol Mode: AnyObject {
     var name: String { get }
     /// The rows offered now, re-read after every switch and reload
@@ -59,6 +58,14 @@ public protocol Mode: AnyObject {
     var markupRows: Bool { get }
     /// `_token_match`; by default the row's text must match.
     func matches(_ row: Row, matcher: Matcher) -> Bool
+    /// `_token_match` with the source row index, as upstream passes it
+    /// (source/mode.c:150-155). The switcher asks this one; the default asks
+    /// `matches(_:matcher:)`. `combi` routes it to the mode owning the row.
+    func matches(_ row: Row, at index: Int, matcher: Matcher) -> Bool
+    /// `_preprocess_input` (source/mode.c:212-217): the query the matcher is
+    /// built from, asked before each non-empty refilter (source/view.c:833).
+    /// Only `combi` changes it; the default returns it unchanged.
+    func preprocessInput(_ input: String) -> String
     /// `_get_completion`, used as the text scored by interactive sorting.
     func completion(at row: Int) -> String
     /// `_get_icon` (source/mode.c:87-96) as the file whose Finder icon a
@@ -70,6 +77,20 @@ public protocol Mode: AnyObject {
     /// `_result`. `input` is the query: set it to replace the query, or to nil
     /// to clear it. `selectedRow` is the source row, or nil when none applies.
     func result(_ action: MenuAction, input: inout String?, selectedRow: Int?) -> ModeResult
+    /// `_result` with MENU_CUSTOM_ACTION (include/mode.h:72,78,90) as `alt`,
+    /// set by kb-accept-alt and kb-accept-custom-alt (source/view.c:1280-1293,
+    /// 1302-1309). Only `run` reads it (source/modes/run.c:456); the default
+    /// ignores it. A requirement, so a call through `any Mode` reaches a
+    /// mode's own version.
+    func result(_ action: MenuAction, alt: Bool, input: inout String?, selectedRow: Int?) -> ModeResult
+    /// `_result` with MENU_COMPLETE (include/mode.h:88), sent by
+    /// kb-mode-complete (source/view.c:1128-1136). `selectedRow` is the
+    /// highlighted source row, or nil without a visible row; `input` is the
+    /// query as for `result`. nil ignores the key, the default.
+    /// ponytail: upstream drun opens the file completer for `%f`/`%u` entries
+    /// (source/modes/drun.c:1426-1455); `DrunMode` keeps the default.
+    /// A requirement, so a call through `any Mode` reaches a mode's own version.
+    func complete(input: inout String?, selectedRow: Int?) -> ModeResult?
 }
 
 extension Mode {
@@ -83,5 +104,15 @@ extension Mode {
     public func matches(_ row: Row, matcher: Matcher) -> Bool {
         matcher.matches(row.text)
     }
+    public func matches(_ row: Row, at index: Int, matcher: Matcher) -> Bool {
+        matches(row, matcher: matcher)
+    }
+    public func preprocessInput(_ input: String) -> String { input }
     public func completion(at row: Int) -> String { rows[row].text }
+
+    public func result(_ action: MenuAction, alt: Bool, input: inout String?, selectedRow: Int?) -> ModeResult {
+        result(action, input: &input, selectedRow: selectedRow)
+    }
+
+    public func complete(input: inout String?, selectedRow: Int?) -> ModeResult? { nil }
 }

@@ -5,11 +5,27 @@ public enum ModeSpec: Equatable, Sendable {
     /// `run` (source/modes/run.c:599) with its history file, nil when
     /// `-disable-history` is set, and the `-terminal`, `-run-command` and
     /// `-run-shell-command` settings (config/config.c:65-74); a nil terminal
-    /// means Terminal.app.
-    case run(historyPath: String?, terminal: String?, runCommand: String, runShellCommand: String)
+    /// means Terminal.app. `listCommand` is `-run-list-command`
+    /// (source/xrmoptions.c:244), nil when absent.
+    case run(
+        historyPath: String?, terminal: String?, runCommand: String, runShellCommand: String,
+        listCommand: String? = nil)
+    /// `ssh` (source/modes/ssh.c:710) with its history file, nil when
+    /// `-disable-history` is set, `-terminal` (nil means Terminal.app),
+    /// `-ssh-command`, `-ssh-client`, `-parse-hosts` and `-parse-known-hosts`
+    /// (config/config.c:64-68, 122-125).
+    case ssh(
+        historyPath: String?, terminal: String?, sshCommand: String, sshClient: String, parseHosts: Bool,
+        parseKnownHosts: Bool)
     /// `drun` (source/modes/drun.c:1693) with its history file, nil when
     /// `-disable-history` is set (drun.c:883-893, config/config.c:103).
     case drun(historyPath: String?)
+    /// `combi` (source/modes/combi.c:345) with the modes of `-combi-modes`,
+    /// each one's `-display-<name>` or name, and `-combi-display-format`, nil
+    /// under `-combi-hide-mode-prefix` (config/config.c:127, 162-163).
+    case combi(modes: [ModeSpec], displayNames: [String], displayFormat: String?)
+    /// `keys` (source/modes/help-keys.c:113) listing the effective bindings.
+    case keys(keymap: Keymap)
     /// `filebrowser` (source/modes/filebrowser.c:729) with its `directory` and
     /// `show-hidden` settings (395-405, 422-453); nil directory means home.
     case fileBrowser(directory: String?, showHidden: Bool)
@@ -21,7 +37,10 @@ public enum ModeSpec: Equatable, Sendable {
         switch self {
         case .script(let name, _): name
         case .run: "run"
+        case .ssh: "ssh"
         case .drun: "drun"
+        case .combi: "combi"
+        case .keys: "keys"
         case .fileBrowser: "filebrowser"
         }
     }
@@ -96,31 +115,72 @@ public struct ShowOptions: Sendable {
     public init(arguments args: Arguments, environment: [String: String] = ProcessInfo.processInfo.environment) throws {
         // xrmoptions.c:75-86 parses switchers, modi, then modes; the last one
         // present wins.
-        // Upstream defaults to `window,drun,run,ssh` (`drun,run,ssh` on
-        // Wayland, config/config.c:36-42); of those only drun exists here, so
-        // the default enables both built-ins instead.
+        // Upstream defaults to `window,drun,run,ssh`, or `drun,run,ssh`
+        // without window mode (config/config.c:36-42). window is not built in
+        // yet, so the default is the latter; it becomes `window,drun,run,ssh`
+        // when window lands.
         let list =
-            args.string("-modes") ?? args.string("-modi") ?? args.string("-switchers") ?? "drun,filebrowser"
+            args.string("-modes") ?? args.string("-modi") ?? args.string("-switchers") ?? "drun,run,ssh"
         // Each name resolves to the first available mode with it, built-ins
-        // in upstream's order (source/rofi.c:732-740).
-        // ponytail: only `run`, `drun` and `filebrowser` are built in; window,
-        // ssh, combi, keys and recursivebrowser stay "not found".
+        // in upstream's order (source/rofi.c:732-739): run, ssh, drun, combi,
+        // keys, filebrowser.
+        // ponytail: window and recursivebrowser are not built in yet; they
+        // stay "not found".
         // ponytail: upstream reads the filebrowser's settings from the theme
         // (source/modes/filebrowser.c:395-405), not from flags.
         let disableHistory = args.bool("disable-history", default: false)
-        var known: [ModeSpec] = [
+        // Gathered once before the mode list is built (source/rofi.c:756).
+        let scripts = userScripts(environment)
+        // parse_keys_abe runs after setup_modes (source/rofi.c:1271), but
+        // `keys` needs the bindings; its errors are added in that order below.
+        let parsedKeymap = Result { try Keymap(arguments: args) }
+        let builtins: [ModeSpec] = [
             .run(
                 historyPath: disableHistory ? nil : cacheDirectory(args) + "/rofi-4.runcache",
                 terminal: args.string("-terminal"),
                 runCommand: args.string("-run-command") ?? "{cmd}",
-                runShellCommand: args.string("-run-shell-command") ?? "{terminal} -e {cmd}"),
+                runShellCommand: args.string("-run-shell-command") ?? "{terminal} -e {cmd}",
+                listCommand: args.string("-run-list-command")),
+            .ssh(
+                historyPath: disableHistory ? nil : cacheDirectory(args) + "/rofi-2.sshcache",
+                terminal: args.string("-terminal"),
+                sshCommand: args.string("-ssh-command") ?? "{terminal} -e {ssh-client} {host} [-p {port}]",
+                sshClient: args.string("-ssh-client") ?? "ssh",
+                parseHosts: args.bool("parse-hosts", default: false),
+                parseKnownHosts: args.bool("parse-known-hosts", default: true)),
             .drun(historyPath: disableHistory ? nil : drunHistoryPath(args)),
+            .keys(keymap: (try? parsedKeymap.get()) ?? Keymap()),
             .fileBrowser(
                 directory: args.string("-filebrowser-directory"),
                 showHidden: args.bool("filebrowser-show-hidden", default: false)),
         ]
-        // Gathered once before the mode list is built (source/rofi.c:756).
-        let scripts = userScripts(environment)
+        // combi_mode_parse_switchers (source/modes/combi.c:62-98): a built-in,
+        // else a script spec; combi itself and unknown names are skipped with
+        // a warning, shown only when combi is used. xrmoptions.c:439-450 parses
+        // combi-modi, then combi-modes.
+        // ponytail: upstream's default `window,run` always warns about window,
+        // which does not exist here.
+        var combined: [ModeSpec] = []
+        var combiWarnings: [String] = []
+        let combiList = args.string("-combi-modes") ?? args.string("-combi-modi") ?? "window,run"
+        for token in combiList.split(whereSeparator: { $0 == "," || $0 == "#" }).map(String.init) {
+            if token == "combi" {
+                combiWarnings.append("You cannot add 'combi' to the list of combined modes.\n")
+            } else if let spec = builtins.first(where: { $0.name == token })
+                ?? ModeSpec(scriptSpec: token, userScripts: scripts)
+            {
+                combined.append(spec)
+            } else {
+                combiWarnings.append("Invalid script switcher: \(token)\n")
+            }
+        }
+        let combi = ModeSpec.combi(
+            modes: combined, displayNames: combined.map { args.string("-display-" + $0.name) ?? $0.name },
+            displayFormat: args.bool("combi-hide-mode-prefix", default: false)
+                ? nil : args.string("-combi-display-format") ?? "{mode} {text}")
+        // source/rofi.c:732-739: combi sits after drun.
+        var known = builtins
+        known.insert(combi, at: 3)
         func resolve(_ token: String) -> ModeSpec? {
             if let spec = known.first(where: { $0.name == token }) { return spec }
             guard let spec = ModeSpec(scriptSpec: token, userScripts: scripts) else { return nil }
@@ -146,7 +206,7 @@ public struct ShowOptions: Sendable {
         }
         // parse_keys_abe's errors follow (source/rofi.c:1271).
         do {
-            keymap = try Keymap(arguments: args)
+            keymap = try parsedKeymap.get()
         } catch let error as InvalidModeConfiguration {
             errors += error.errors
         }
@@ -187,6 +247,7 @@ public struct ShowOptions: Sendable {
         // (source/rofi.c:1217, 1242, 819-821), so the flag only works for
         // built-ins there; here it works for every mode, as find_arg_str.
         displayNames = modes.map { args.string("-display-" + $0.name) ?? $0.name }
+        if modes.contains(combi) { warnings += combiWarnings }
         sidebarMode = args.bool("sidebar-mode", default: sidebarMode)
         showIcons = args.bool("show-icons", default: showIcons)
     }
@@ -227,7 +288,8 @@ private func drunHistoryPath(_ args: Arguments) -> String {
 }
 
 /// `cache_dir` (source/rofi.c:1227-1231), shared by the history files; the
-/// run mode's is `rofi-4.runcache` (source/modes/run.c:64).
+/// run mode's is `rofi-4.runcache` (source/modes/run.c:64), the ssh mode's
+/// `rofi-2.sshcache` (source/modes/ssh.c:83).
 private func cacheDirectory(_ args: Arguments) -> String {
     let environment = ProcessInfo.processInfo.environment
     return args.string("-cache-dir").map(expandPath)

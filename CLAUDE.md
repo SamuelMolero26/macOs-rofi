@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to coding agents when working with code in this repository.
 
 ## What this is
 
@@ -30,10 +30,10 @@ Three targets, with a strict dependency direction `rofi` → `RofiAppKit` → `R
 
 Key seams in Core:
 
-- **`Mode` protocol** (`Mode.swift`): `-show` modes (`DrunMode`, `FileBrowserMode`, `ScriptMode`, `RunMode`) are class-bound because `result` mutates what `rows` returns next. `ModeSwitcher` handles next/previous/switch between modes; modes return `ModeResult` and never switch themselves. `ShowOptions.swift` maps `-show <name>` to a concrete mode.
+- **`Mode` protocol** (`Mode.swift`): `-show` modes (`RunMode`, `SshMode`, `DrunMode`, `CombiMode`, `KeysMode`, `FileBrowserMode`, `ScriptMode`) are class-bound because `result` mutates what `rows` returns next. `ModeSwitcher` handles next/previous/switch between modes; modes return `ModeResult` and never switch themselves. `ShowOptions.swift` maps `-show <name>` to a concrete mode; the default `-modes` is `drun,run,ssh` (upstream without `window`, which is decided in #75 and not built yet). `CombiMode` routes every action to the submode owning the row.
 - **dmenu**: `DmenuPipeline` / `DmenuSession` implement the stdin → filter → select → output flow, including `-dump`, `-format`, and meta/icon rows.
 - **Config/theming**: `RasiParser` → `RasiModel` → `RasiResolver` → `PanelStyle`. Only a *subset* of Rasi is supported, with unsupported declarations warning instead of failing. The boundary is decided in ADR 0001.
-- **Command launching** (in progress, issue #72): `CommandTemplate` (rofi placeholder/optional-group/argv-split engine), `TerminalLaunch` (injected launcher; Terminal.app has no `-e`, so it uses a `.command` file adapter), `ProcessCommandLauncher`. Launchers are injected so tests assert the final argv and never spawn processes.
+- **Command launching** (`run`, `ssh`): `CommandTemplate` (rofi placeholder/optional-group/argv-split engine), `TerminalLaunch` (injected launcher; Terminal.app has no `-e`, so it uses a `.command` file adapter), `ProcessCommandLauncher`. Launchers are injected so tests assert the final argv and never spawn processes.
 
 ## Project conventions
 
@@ -46,6 +46,7 @@ Only test the core functinality and test hard, the less but robust test the bett
 - Deliberate simplifications are marked with `ponytail:` comments (e.g. in `Mode.swift`); respect them rather than "fixing" them unasked.
 
 ## Engineering practices
+
 - We're a startup. You're probably used to writing enterprise code - code that tries to handle every possible edge case and has fallbacks for everything. That's not how we do things around here: our number one rule is to keep things simple. We handle ONLY the most important cases.
 
 - We try to only add new functionality that is small (that is, simple and few lines of code) or absolutely necessary. If a change is not small or absolutely necessary, don't make it.

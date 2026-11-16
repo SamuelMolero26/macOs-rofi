@@ -31,6 +31,15 @@ private final class Fixtures {
     }
 }
 
+/// `/data` holding one hidden file, for the run mode's file completer.
+private struct OneDirectoryTree: FileBrowserFileSystem {
+    func entries(in path: String) -> [FileBrowserEntry]? {
+        path == "/data" ? [FileBrowserEntry(name: ".dot", kind: .file, isLink: false)] : nil
+    }
+    func isDirectory(_ path: String) -> Bool { path == "/data" }
+    func exists(_ path: String) -> Bool { path == "/data" }
+}
+
 /// Rows printed on every run after the first, describing how it was run.
 private let reportRun = """
     if [ "$ROFI_RETV" != 0 ]; then
@@ -72,6 +81,17 @@ private let reportRun = """
         #expect(mode.name == "s")
         #expect(texts(mode) == ["retv=0 argc=0 input=unset outside=\(getpid())"])
         #expect(mode.error == nil)
+    }
+
+    // script.c:373, 380-420: MENU_COMPLETE matches no branch, so the view
+    // exits and the script is not run again.
+    @Test func modeCompleteExitsWithoutRunningTheScript_script_c_373() {
+        let path = fixtures.script("s", #"if [ "$ROFI_RETV" != 0 ]; then echo again; else echo first; fi"#)
+        let mode: any Mode = ScriptMode(name: "s", command: path)
+        var input: String? = "query"
+        #expect(mode.complete(input: &input, selectedRow: 0) == .exit)
+        #expect(mode.rows.map(\.text) == ["first"])
+        #expect(input == "query")
     }
 
     // script.c:299-303: extras after the first NUL use the dmenu row parser.
@@ -502,10 +522,6 @@ private let reportRun = """
             },
             launcher: { _ in .success(()) })
         #expect(loadCount == 0)
-
-        let defaults = try ShowOptions(arguments: Arguments(["rofi", "-show", "drun"]))
-        #expect(defaults.modes.map(\.name) == ["drun", "filebrowser"])
-        #expect(defaults.startIndex == 0)
     }
 
     // script.c:100-101: `\0icon` is a comma list tried in order. Only an
@@ -581,5 +597,94 @@ private let reportRun = """
         let modes = makeModes(
             [.run(historyPath: nil, terminal: nil, runCommand: "{cmd}", runShellCommand: "{terminal} -e {cmd}")])
         #expect(try #require(modes[0] as? RunMode).rows.isEmpty)
+    }
+
+    // run.c:375-377: the spec's list command reaches the injected generator.
+    @Test func makeModesPassesTheListCommandToTheGenerator_run_c_375() throws {
+        var generated: [[String]] = []
+        let modes = makeModes(
+            [
+                .run(
+                    historyPath: nil, terminal: nil, runCommand: "{cmd}", runShellCommand: "{terminal} -e {cmd}",
+                    listCommand: "lister -a")
+            ],
+            applications: { [] }, launcher: { _ in .success(()) },
+            executables: { ["ls"] },
+            listGenerator: {
+                generated.append($0)
+                return .success(["tool"])
+            })
+        #expect(try #require(modes[0] as? RunMode).rows.map(\.text) == ["ls", "tool"])
+        #expect(generated == [["lister", "-a"]])
+    }
+
+    // run.c:524-528: run's file completer is a file browser that follows the
+    // filebrowser settings (filebrowser.c:395-405), on the injected tree.
+    @Test func makeModesGivesRunAFileCompleter_run_c_524() throws {
+        let modes = makeModes(
+            [
+                .run(historyPath: nil, terminal: nil, runCommand: "{cmd}", runShellCommand: "{terminal} -e {cmd}"),
+                .fileBrowser(directory: "/data", showHidden: true),
+            ],
+            applications: { [] }, launcher: { _ in .success(()) }, executables: { ["ls"] },
+            fileSystem: OneDirectoryTree())
+        let run = try #require(modes[0] as? RunMode)
+        var input: String? = nil
+        #expect(run.complete(input: &input, selectedRow: 0) == .reload)
+        #expect(run.rows.map(\.text) == ["..", ".dot"])
+        #expect(run.message == "File complete for: ls\nCurrent directory: /data")
+    }
+
+    // Without an injected generator a list command spawns nothing and says so.
+    @Test func makeModesWithoutAListGeneratorReportsIt_run_c_375() throws {
+        let modes = makeModes(
+            [
+                .run(
+                    historyPath: nil, terminal: nil, runCommand: "{cmd}", runShellCommand: "{terminal} -e {cmd}",
+                    listCommand: "lister")
+            ],
+            applications: { [] }, launcher: { _ in .success(()) }, executables: { ["ls"] })
+        let run = try #require(modes[0] as? RunMode)
+        #expect(run.rows.map(\.text) == ["ls"])
+        #expect(run.message == "Failed to execute: 'lister'\nError: 'list generator is unavailable'")
+    }
+
+    // source/rofi.c:795-826: an ssh spec builds an SshMode on the injected
+    // files, launcher and script writer.
+    @Test func makeModesBuildsSshWithInjectedDependencies_rofi_c_795() throws {
+        var launched: [[String]] = []
+        var read: [String] = []
+        let modes = makeModes(
+            [
+                .ssh(
+                    historyPath: nil, terminal: "ghostty", sshCommand: "{terminal} -e {ssh-client} {host} [-p {port}]",
+                    sshClient: "ssh", parseHosts: true, parseKnownHosts: true)
+            ],
+            applications: { [] }, launcher: { _ in .success(()) },
+            commandLauncher: {
+                launched.append($0)
+                return .success(())
+            },
+            sshFiles: SshFiles(
+                read: { path in
+                    read.append(path)
+                    return path == "/etc/hosts" ? "10.0.0.1 box\n" : nil
+                }, glob: { _ in [] }))
+        let ssh = try #require(modes[0] as? SshMode)
+        #expect(ssh.rows.map(\.text) == ["box"])
+        #expect(read.last == "/etc/hosts")
+        var input: String? = nil
+        _ = ssh.result(.ok, input: &input, selectedRow: 0)
+        #expect(launched == [["ghostty", "-e", "ssh", "box"]])
+    }
+
+    // Without injected files nothing is read.
+    @Test func makeModesWithoutSshFilesIsInert_rofi_c_795() throws {
+        let modes = makeModes([
+            .ssh(
+                historyPath: nil, terminal: nil, sshCommand: "{terminal} -e {ssh-client} {host} [-p {port}]",
+                sshClient: "ssh", parseHosts: true, parseKnownHosts: true)
+        ])
+        #expect(try #require(modes[0] as? SshMode).rows.isEmpty)
     }
 }

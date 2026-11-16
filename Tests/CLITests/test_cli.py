@@ -56,7 +56,10 @@ class CLIContractTests(unittest.TestCase):
             b"    \xe2\x80\xa2 a\n"
             b"\nThe following modes can be enabled:\n"
             b"    \xe2\x80\xa2 run\n"
+            b"    \xe2\x80\xa2 ssh\n"
             b"    \xe2\x80\xa2 drun\n"
+            b"    \xe2\x80\xa2 combi\n"
+            b"    \xe2\x80\xa2 keys\n"
             b"    \xe2\x80\xa2 filebrowser\n"
             b"\nTo activate a mode, add it to the list in the modes setting.\n",
         )
@@ -83,37 +86,43 @@ class CLIContractTests(unittest.TestCase):
             b"rofi: The following errors were detected when starting rofi:\n\n\n"
             b"Mode nope is not found.\nThe following modes are known:\n"
             b"        * run\n"
+            b"        * ssh\n"
             b"        * drun\n"
+            b"        * combi\n"
+            b"        * keys\n"
             b"        * filebrowser\n"
             b"        * +a\n\n",
         )
 
-    # source/rofi.c:946-950, 547-562, 732-739: built-in modes such as ssh do
-    # not exist yet; the known list names the built-ins run, drun and
-    # filebrowser, with drun and filebrowser enabled by default.
+    # source/rofi.c:946-950, 547-562, 732-739: built-in modes such as window do
+    # not exist yet; the known list names the built-ins run, ssh, drun, combi,
+    # keys and filebrowser, with drun, run and ssh enabled by default.
     def test_show_unimplemented_builtin_diagnoses_and_exits_dataerr(self):
-        result = self.run_rofi("rofi", "-show", "ssh")
+        result = self.run_rofi("rofi", "-show", "window")
 
         self.assertEqual(result.returncode, 65)
         self.assertEqual(result.stdout, b"")
         self.assertEqual(
             result.stderr,
             b"rofi: The following errors were detected when starting rofi:\n\n\n"
-            b"Mode ssh is not found.\nThe following modes are known:\n"
-            b"        * run\n"
+            b"Mode window is not found.\nThe following modes are known:\n"
+            b"        * +run\n"
+            b"        * +ssh\n"
             b"        * +drun\n"
-            b"        * +filebrowser\n\n",
+            b"        * combi\n"
+            b"        * keys\n"
+            b"        * filebrowser\n\n",
         )
 
-    # source/rofi.c:564-595: with no mode list, drun and filebrowser are the
-    # enabled defaults (upstream's window/run/ssh do not exist here).
-    def test_drun_and_filebrowser_are_the_default_enabled_modes(self):
+    # source/rofi.c:564-595, config/config.c:36-42: with no mode list, drun,
+    # run and ssh are the enabled defaults (upstream's without window).
+    def test_drun_run_and_ssh_are_the_default_enabled_modes(self):
         result = self.run_rofi("rofi")
 
         self.assertEqual(result.returncode, 0)
         self.assertIn(
             b"The following modes are enabled:\n"
-            b"    \xe2\x80\xa2 drun\n    \xe2\x80\xa2 filebrowser\n"
+            b"    \xe2\x80\xa2 drun\n    \xe2\x80\xa2 run\n    \xe2\x80\xa2 ssh\n"
             b"\nThe following modes can be enabled:\n",
             result.stderr,
         )
