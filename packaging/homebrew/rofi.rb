@@ -10,7 +10,7 @@ class Rofi < Formula
   depends_on macos: :ventura
 
   def install
-    (buildpath/"Sources/rofi/Version.swift").write "let rofiVersion = \"#{version}\"\n"
+    inreplace "Sources/rofi/Version.swift", '"development"', "\"#{version}\""
     system "swift", "build", "--disable-sandbox", "--configuration", "release"
     bin.install ".build/release/rofi"
   end
