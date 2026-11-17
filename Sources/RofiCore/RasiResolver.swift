@@ -616,27 +616,11 @@ private struct Evaluator {
     }
 
     mutating func warn(_ code: RasiDiagnosticCode, _ message: String, at point: RasiPoint) {
-        warnings.append(
-            RasiDiagnostic(
-                code: code,
-                message: message,
-                source: point.source,
-                line: point.line,
-                column: point.column
-            )
-        )
+        warnings.append(RasiDiagnostic(code, message, at: point))
     }
 
     func fatal(_ code: RasiDiagnosticCode, _ message: String, at point: RasiPoint) -> RasiFailure {
-        RasiFailure(
-            diagnostic: RasiDiagnostic(
-                code: code,
-                message: message,
-                source: point.source,
-                line: point.line,
-                column: point.column
-            )
-        )
+        RasiFailure(diagnostic: RasiDiagnostic(code, message, at: point))
     }
 
     func point(for source: RasiSource) -> RasiPoint {

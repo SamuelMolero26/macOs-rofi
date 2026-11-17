@@ -2,6 +2,11 @@ import Darwin
 import RofiCore
 import Testing
 
+/// Modes without drun; nothing is spawned.
+func makeModes(_ specs: [ModeSpec]) -> [any Mode] {
+    makeModes(specs, applications: { [] }, launcher: { _ in .failure(.init(command: "test", reason: "unavailable")) })
+}
+
 /// Executable `/bin/sh` fixtures in a fresh temporary directory, removed when
 /// the suite instance goes away.
 private final class Fixtures {

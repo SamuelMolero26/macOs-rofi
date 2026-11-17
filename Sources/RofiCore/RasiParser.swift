@@ -355,15 +355,7 @@ private struct ParserState {
     }
 
     private func failure(_ code: RasiDiagnosticCode, _ message: String, at point: RasiPoint) -> RasiFailure {
-        RasiFailure(
-            diagnostic: RasiDiagnostic(
-                code: code,
-                message: message,
-                source: point.source,
-                line: point.line,
-                column: point.column
-            )
-        )
+        RasiFailure(diagnostic: RasiDiagnostic(code, message, at: point))
     }
 }
 

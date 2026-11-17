@@ -187,7 +187,7 @@ public final class ScriptMode: Mode {
         case "markup-rows": markupRows = isTrue
         case "urgent": urgentRanges += parseRowRanges(value)
         case "active": activeRanges += parseRowRanges(value)
-        case "delim": delimiter = bytes.count == 1 ? bytes[bytes.startIndex] : parseSeparator(value)
+        case "delim": delimiter = parseSeparator(Array(bytes))
         case "no-custom": noCustom = isTrue
         case "use-hot-keys": useHotKeys = isTrue
         case "keep-selection": keepSelection = isTrue
@@ -199,21 +199,6 @@ public final class ScriptMode: Mode {
         default: break
         }
     }
-}
-
-/// Creates mode lists that do not contain `drun`. Application-mode assembly
-/// must use the records-and-launcher overload so RofiCore stays platform-free.
-public func makeModes(_ specs: [ModeSpec]) -> [any Mode] {
-    precondition(
-        !withCombined(specs).contains { if case .drun = $0 { true } else { false } },
-        "drun mode requires injected application records and launcher")
-    return makeModes(
-        specs, applications: { [] },
-        launcher: { _ in
-            .failure(
-                ApplicationLaunchFailure(
-                    command: "launch application", reason: "application launcher is unavailable"))
-        })
 }
 
 /// One mode per entry of the mode list (source/rofi.c:790-826).
