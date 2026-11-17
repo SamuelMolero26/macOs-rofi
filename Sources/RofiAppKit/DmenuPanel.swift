@@ -179,7 +179,7 @@ import os
         configureLoadingLabel()
         configureSwitcher()
         configureLayout()
-        reloadMatches()
+        syncTable(reload: true)
     }
 
     func present() {
@@ -211,7 +211,7 @@ import os
                 lastActionWasRowTab = action == .rowTab
                 if action.isNavigation {
                     perform { $0.navigate(action, pageSize: visibleRowCount, repeatedTab: repeatedTab) }
-                    if !finished { syncSelection() }
+                    if !finished { syncTable() }
                 } else {
                     perform { $0.perform(action) }
                 }
@@ -484,7 +484,7 @@ import os
         model.appendRows(pending.rows)
         tableView.insertRows(at: IndexSet(firstNewRow..<model.matches.count), withAnimation: [])
         if model.selectedVisibleIndex != selection {
-            syncSelection()
+            syncTable()
         }
         // The end of input clears the one overlay, even a multi-select count
         // (source/modes/dmenu.c:237-240).
@@ -501,28 +501,14 @@ import os
         searchFieldBesideLoading.isActive = text != nil
     }
 
-    private func reloadMatches() {
-        synchronizeTableSelection(reloadData: true)
-    }
-
-    private func syncSelection() {
-        synchronizeTableSelection(reloadData: false)
-    }
-
-    private func synchronizeTableSelection(reloadData: Bool) {
+    /// Shows the model's selection in the table, after reloading its rows
+    /// when `reload`, without echoing the change back to the model.
+    private func syncTable(reload: Bool = false) {
         let wasSuppressed = suppressTableSelectionChanges
         suppressTableSelectionChanges = true
         defer { suppressTableSelectionChanges = wasSuppressed }
-        if reloadData {
-            tableView.reloadData()
-        }
-        restoreCoreSelection()
-    }
-
-    private func restoreCoreSelection() {
-        guard let index = model.selectedVisibleIndex,
-            tableView.numberOfRows > index
-        else {
+        if reload { tableView.reloadData() }
+        guard let index = model.selectedVisibleIndex, tableView.numberOfRows > index else {
             tableView.deselectAll(nil)
             return
         }
@@ -545,7 +531,7 @@ import os
             panel.orderOut(nil)
             NSApplication.shared.stop(nil)
         case .reload:
-            reloadMatches()
+            syncTable(reload: true)
             // A refused toggle leaves the count unchanged and must not clear
             // "Loading.. " mid-stream; upstream returns before touching the
             // overlay (source/modes/dmenu.c:908-911).
@@ -623,10 +609,10 @@ extension PanelController: NSTextFieldDelegate {
             perform { $0.cancel() }
         case #selector(NSResponder.moveUp(_:)):
             model.moveSelection(by: -1)
-            syncSelection()
+            syncTable()
         case #selector(NSResponder.moveDown(_:)):
             model.moveSelection(by: 1)
-            syncSelection()
+            syncTable()
         // kb-mode-next is Control+Tab and kb-mode-previous Control+Shift+Tab
         // (source/keyb.c:135-142; Shift+Right/Left stay text selection). The
         // field editor gets them as these key-view selectors: observed with

@@ -148,7 +148,7 @@ public struct ShowOptions: Sendable {
                 sshClient: args.string("-ssh-client") ?? "ssh",
                 parseHosts: args.bool("parse-hosts", default: false),
                 parseKnownHosts: args.bool("parse-known-hosts", default: true)),
-            .drun(historyPath: disableHistory ? nil : drunHistoryPath(args)),
+            .drun(historyPath: disableHistory ? nil : cacheDirectory(args) + "/rofi3.druncache"),
             .keys(keymap: (try? parsedKeymap.get()) ?? Keymap()),
             .fileBrowser(
                 directory: args.string("-filebrowser-directory"),
@@ -280,16 +280,11 @@ private func disabledModeWarning(_ mode: String, list: String) -> String {
         + "\(green)modes: [\(list)\(reset)\(red),\(mode)]\(reset).\n"
 }
 
-/// `cache_dir/rofi3.druncache` (source/modes/drun.c:65, 883-893): `-cache-dir`
-/// tilde-expanded, else g_get_user_cache_dir, which is `$XDG_CACHE_HOME`
-/// or `~/.cache` (source/rofi.c:1227-1231).
-private func drunHistoryPath(_ args: Arguments) -> String {
-    cacheDirectory(args) + "/rofi3.druncache"
-}
-
-/// `cache_dir` (source/rofi.c:1227-1231), shared by the history files; the
-/// run mode's is `rofi-4.runcache` (source/modes/run.c:64), the ssh mode's
-/// `rofi-2.sshcache` (source/modes/ssh.c:83).
+/// `cache_dir` (source/rofi.c:1227-1231): `-cache-dir` tilde-expanded, else
+/// g_get_user_cache_dir, which is `$XDG_CACHE_HOME` or `~/.cache`. It holds
+/// the history files: run's `rofi-4.runcache` (source/modes/run.c:64), ssh's
+/// `rofi-2.sshcache` (source/modes/ssh.c:83) and drun's `rofi3.druncache`
+/// (source/modes/drun.c:65, 883-893).
 private func cacheDirectory(_ args: Arguments) -> String {
     let environment = ProcessInfo.processInfo.environment
     return args.string("-cache-dir").map(expandPath)

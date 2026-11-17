@@ -324,7 +324,6 @@ private struct ParserState {
     private func failure(_ code: RasiDiagnosticCode, _ message: String, at point: RasiPoint) -> RasiFailure {
         RasiFailure(
             diagnostic: RasiDiagnostic(
-                severity: .error,
                 code: code,
                 message: message,
                 source: point.source,

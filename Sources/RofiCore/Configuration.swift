@@ -1,4 +1,3 @@
-import Darwin
 import Foundation
 
 public struct RasiConfigurationEnvironment: @unchecked Sendable {
@@ -121,9 +120,6 @@ private enum SourceToken {
 private final class SourceStore: @unchecked Sendable {
     private let environment: RasiConfigurationEnvironment
     private let paths: PathPolicy
-    private var sourcesByCandidate: [String: RasiSource] = [:]
-    private var sourcesByIdentity: [String: RasiSource] = [:]
-    private var missingCandidates: Set<String> = []
     private var virtualSources: [String: RasiSource] = [:]
     var activeConfigurationDirectory: String
 
@@ -138,20 +134,7 @@ private final class SourceStore: @unchecked Sendable {
     }
 
     func optional(_ path: String) throws -> RasiSource? {
-        if let cached = sourcesByCandidate[path] { return cached }
-        if missingCandidates.contains(path) { return nil }
-        let canonicalCandidate = URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
-        if let cached = sourcesByIdentity[canonicalCandidate] {
-            sourcesByCandidate[path] = cached
-            return cached
-        }
-        guard let source = try environment.loadFile(path) else {
-            missingCandidates.insert(path)
-            return nil
-        }
-        sourcesByCandidate[path] = source
-        sourcesByIdentity[source.identity] = source
-        return source
+        try environment.loadFile(path)
     }
 
     func required(_ path: String, description: String) throws -> RasiSource {
@@ -299,7 +282,7 @@ private struct CanonicalRasi {
                 guard let value = effective[DeclarationKey(selector: selector, property: property)] else { return nil }
                 return "    \(property.rawValue): \(serialize(value));"
             }
-            return "\(selectorName(selector)) {\n\(declarations.joined(separator: "\n"))\n}"
+            return "\(selector.label) {\n\(declarations.joined(separator: "\n"))\n}"
         }
         text = blocks.isEmpty ? "" : blocks.joined(separator: "\n\n") + "\n"
     }
@@ -327,13 +310,7 @@ private func selectorOrder(_ left: RasiSelector, _ right: RasiSelector) -> Bool 
         if selector == .global { return 1 }
         return 2
     }
-    let leftKey = (rank(left), selectorName(left))
-    let rightKey = (rank(right), selectorName(right))
-    return leftKey < rightKey
-}
-
-private func selectorName(_ selector: RasiSelector) -> String {
-    ([selector.name] + selector.states).joined(separator: " ")
+    return (rank(left), left.label) < (rank(right), right.label)
 }
 
 private func serialize(_ value: RasiResolvedValue) -> String {
@@ -372,55 +349,31 @@ private func directory(of path: String) -> String {
     URL(fileURLWithPath: path).deletingLastPathComponent().path
 }
 
-private func diagnostic(
-    _ code: RasiDiagnosticCode,
-    _ message: String,
-    source: String,
-    severity: RasiDiagnosticSeverity = .warning
-) -> RasiDiagnostic {
-    RasiDiagnostic(severity: severity, code: code, message: message, source: source, line: 1, column: 1)
+private func diagnostic(_ code: RasiDiagnosticCode, _ message: String, source: String) -> RasiDiagnostic {
+    RasiDiagnostic(code: code, message: message, source: source, line: 1, column: 1)
 }
 
 private func failure(_ code: RasiDiagnosticCode, _ message: String, source: String) -> RasiFailure {
-    RasiFailure(diagnostic: diagnostic(code, message, source: source, severity: .error))
+    RasiFailure(diagnostic: diagnostic(code, message, source: source))
 }
 
+/// The size is checked before reading so a huge file is never loaded; the
+/// resolver caps every source, theme strings included, at the same 1 MiB.
 private func loadLocalRasiFile(_ path: String) throws -> RasiSource? {
-    let descriptor = open(path, O_RDONLY | O_CLOEXEC)
-    if descriptor == -1 {
-        if errno == ENOENT || errno == ENOTDIR { return nil }
-        throw failure(.missingImport, String(cString: strerror(errno)), source: path)
-    }
-    defer { close(descriptor) }
-
-    var status = stat()
-    guard fstat(descriptor, &status) == 0 else {
-        throw failure(.missingImport, String(cString: strerror(errno)), source: path)
-    }
-    guard status.st_mode & S_IFMT == S_IFREG else {
-        throw failure(.missingImport, "only regular files are supported", source: path)
-    }
-    guard status.st_size <= 1_048_576 else {
-        throw failure(.resourceLimit, "source exceeds the 1 MiB limit", source: path)
-    }
-
-    var bytes: [UInt8] = []
-    var buffer = [UInt8](repeating: 0, count: 65_536)
-    while true {
-        let count = buffer.withUnsafeMutableBytes { read(descriptor, $0.baseAddress, $0.count) }
-        if count == 0 { break }
-        if count < 0 {
-            if errno == EINTR { continue }
-            throw failure(.missingImport, String(cString: strerror(errno)), source: path)
+    guard FileManager.default.fileExists(atPath: path) else { return nil }
+    let url = URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL
+    do {
+        let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+        guard values.isRegularFile == true else {
+            throw failure(.missingImport, "only regular files are supported", source: path)
         }
-        bytes.append(contentsOf: buffer.prefix(count))
-        guard bytes.count <= 1_048_576 else {
+        guard values.fileSize ?? 0 <= 1_048_576 else {
             throw failure(.resourceLimit, "source exceeds the 1 MiB limit", source: path)
         }
+        return try RasiSource(identity: url.path, bytes: Array(Data(contentsOf: url)))
+    } catch let known as RasiFailure {
+        throw known
+    } catch {
+        throw failure(.missingImport, error.localizedDescription, source: path)
     }
-
-    // The bytes always come from this descriptor. Canonicalization is used only
-    // for source identity and cycle detection; the file is never reopened.
-    let identity = URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
-    return try RasiSource(identity: identity, bytes: bytes)
 }

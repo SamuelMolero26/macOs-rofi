@@ -26,7 +26,7 @@ import Testing
         #expect(mode.rows[4].text.hasPrefix("<b>kb-mode-complete    </b> (Control+l) "))
         #expect(mode.rows[6].text.hasPrefix("<b>kb-page-prev        </b> (Page_Up) "))
         #expect(mode.rows[10].text.hasPrefix("<b>kb-custom-1         </b> (Alt+1) "))
-        #expect(mode.matches(mode.rows[0], matcher: Matcher(query: "span", options: MatchOptions())))
+        #expect(mode.matches(mode.rows[0], at: 0, matcher: Matcher(query: "span", options: MatchOptions())))
     }
 
     // help-keys.c:68-76: read-only; a custom key switches to the mode with

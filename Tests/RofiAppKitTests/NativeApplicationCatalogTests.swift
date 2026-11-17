@@ -93,27 +93,23 @@ import Testing
         let application = catalog.applications().first
 
         #expect(application?.bundlePath == resolved.path)
-        #expect(application?.iconPath == resolved.path)
         #expect(workspace.requestedIdentifiers == ["com.example.app"])
     }
 
-    @Test func successfulLaunchUsesResolvedWorkspaceURLWithoutOpeningInTheTest() {
-        let original = URL(fileURLWithPath: "/Volumes/Other/Example.app")
-        let resolved = URL(fileURLWithPath: "/Applications/Example.app")
+    @Test func successfulLaunchOpensTheBundleWithoutOpeningInTheTest() {
         let workspace = FakeWorkspace()
-        workspace.resolvedApplications["com.example.app"] = resolved
         workspace.openResult = true
         let catalog = makeCatalog(urls: [], metadata: [:], workspace: workspace)
         let application = ApplicationRecord(
             identifier: "com.example.app", localizedDisplayName: "Example", bundleName: nil,
-            bundlePath: original.path)
+            bundlePath: "/Applications/Example.app")
 
         let result = catalog.launch(application)
 
         if case .failure(let failure) = result {
             Issue.record("expected success, got \(failure)")
         }
-        #expect(workspace.openedURLs == [resolved])
+        #expect(workspace.openedURLs.map(\.path) == [application.bundlePath])
     }
 
     @Test func failedLaunchMapsWorkspaceRefusalWithoutOpeningInTheTest() {

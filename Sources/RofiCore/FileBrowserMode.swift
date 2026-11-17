@@ -230,7 +230,7 @@ public final class FileBrowserMode: Mode {
     }
 
     /// `file_browser_mode_result` (filebrowser.c:479-570).
-    public func result(_ action: MenuAction, input: inout String?, selectedRow: Int?) -> ModeResult {
+    public func result(_ action: MenuAction, alt: Bool, input: inout String?, selectedRow: Int?) -> ModeResult {
         failure = nil
         switch action {
         case .cancel:

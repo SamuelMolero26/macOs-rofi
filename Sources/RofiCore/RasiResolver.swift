@@ -42,7 +42,6 @@ private struct Evaluator {
 
     let loader: RasiResolver.Loader
     var parser = RasiParser()
-    var documents: [String: RasiDocument] = [:]
     var loadedSources: [String] = []
     var configuration: [PendingDeclaration] = []
     var visual: [PendingDeclaration] = []
@@ -62,9 +61,6 @@ private struct Evaluator {
         guard depth <= Self.maximumImportDepth else {
             throw fatal(.resourceLimit, "import depth exceeds 32", at: point(for: source))
         }
-        if stack.contains(source.identity) {
-            throw fatal(.importCycle, "import cycle includes '\(source.identity)'", at: point(for: source))
-        }
         if recordsSource, !loadedSources.contains(source.identity) {
             guard loadedSources.count < Self.maximumSources else {
                 throw fatal(.resourceLimit, "resolution exceeds 128 distinct sources", at: point(for: source))
@@ -72,13 +68,7 @@ private struct Evaluator {
             loadedSources.append(source.identity)
         }
 
-        let document: RasiDocument
-        if let cached = documents[source.identity] {
-            document = cached
-        } else {
-            document = try parser.parse(source)
-            documents[source.identity] = document
-        }
+        let document = try parser.parse(source)
 
         let nextStack = stack + [source.identity]
         for statement in document.statements {
@@ -103,15 +93,7 @@ private struct Evaluator {
             variables.removeAll(keepingCapacity: true)
         }
         let request = RasiLoadRequest(target: target, kind: kind, includingSource: point.source)
-        let loaded: RasiSource?
-        do {
-            loaded = try loader(request)
-        } catch let failure as RasiFailure {
-            throw failure
-        } catch {
-            throw fatal(.missingImport, "could not load '\(target)': \(error)", at: point)
-        }
-        guard let loaded else {
+        guard let loaded = try loader(request) else {
             if case .importTheme(optional: true) = kind {
                 warn(.missingOptionalImport, "optional import '\(target)' was not found", at: point)
                 return
@@ -139,7 +121,7 @@ private struct Evaluator {
                     if selector != .global {
                         warn(
                             .unsupportedProperty,
-                            "property '\(declaration.name)' is not supported for '\(selectorLabel(selector))'",
+                            "property '\(declaration.name)' is not supported for '\(selector.label)'",
                             at: declaration.point
                         )
                     }
@@ -148,7 +130,7 @@ private struct Evaluator {
                 guard selectorSupported else {
                     warn(
                         .unsupportedSelector,
-                        "selector '\(selectorLabel(selector))' is not supported",
+                        "selector '\(selector.label)' is not supported",
                         at: declaration.point
                     )
                     continue
@@ -156,7 +138,7 @@ private struct Evaluator {
                 guard supports(property, on: selector) else {
                     warn(
                         .unsupportedProperty,
-                        "property '\(property.rawValue)' is not supported for '\(selectorLabel(selector))'",
+                        "property '\(property.rawValue)' is not supported for '\(selector.label)'",
                         at: declaration.point
                     )
                     continue
@@ -195,7 +177,7 @@ private struct Evaluator {
                 )
             }
         }
-        return RasiResolution(declarations: resolved, warnings: warnings, loadedSources: loadedSources)
+        return RasiResolution(declarations: resolved, warnings: warnings)
     }
 
     mutating func resolve(
@@ -622,14 +604,9 @@ private struct Evaluator {
         }
     }
 
-    func selectorLabel(_ selector: RasiSelector) -> String {
-        ([selector.name] + selector.states).joined(separator: " ")
-    }
-
     mutating func warn(_ code: RasiDiagnosticCode, _ message: String, at point: RasiPoint) {
         warnings.append(
             RasiDiagnostic(
-                severity: .warning,
                 code: code,
                 message: message,
                 source: point.source,
@@ -642,7 +619,6 @@ private struct Evaluator {
     func fatal(_ code: RasiDiagnosticCode, _ message: String, at point: RasiPoint) -> RasiFailure {
         RasiFailure(
             diagnostic: RasiDiagnostic(
-                severity: .error,
                 code: code,
                 message: message,
                 source: point.source,

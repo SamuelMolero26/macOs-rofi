@@ -16,7 +16,7 @@ import Testing
             bundlePath: "/Applications/alpha.app"),
         ApplicationRecord(
             identifier: "n", localizedDisplayName: nil, bundleName: nil,
-            bundlePath: "/Applications/Folder/Nested.app", iconPath: "/icons/Nested.icns"),
+            bundlePath: "/Applications/Folder/Nested.app"),
         ApplicationRecord(
             identifier: "t", localizedDisplayName: nil, bundleName: "Terminal",
             bundlePath: "/Applications/Utilities/Terminal.app"),
@@ -85,7 +85,6 @@ import Testing
             bundlePath: "/Applications/Fallback.app")
         #expect(fallback.identifier == "/Applications/Fallback.app")
         #expect(fallback.displayName == "Fallback")
-        #expect(fallback.iconPath == "/Applications/Fallback.app")
     }
 
     @Test func nameIsDrun_drun_c_1693() {
@@ -189,9 +188,9 @@ import Testing
         #expect(act(mode, .customInput, input: "") == .exit)
     }
 
-    @Test func iconPathComesFromTheApplicationRecord() {
+    @Test func iconPathIsTheApplicationBundle() {
         let mode = make()
-        #expect(mode.iconPath(at: row(mode, "Nested")) == "/icons/Nested.icns")
+        #expect(mode.iconPath(at: row(mode, "Nested")) == "/Applications/Folder/Nested.app")
         #expect(mode.iconPath(at: mode.rows.count) == nil)
     }
 }

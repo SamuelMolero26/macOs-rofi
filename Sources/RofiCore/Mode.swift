@@ -56,11 +56,9 @@ public protocol Mode: AnyObject {
     /// Rows are Pango markup, drawn styled (the MARKUP state bit,
     /// source/modes/script.c:505-507); false by default.
     var markupRows: Bool { get }
-    /// `_token_match`; by default the row's text must match.
-    func matches(_ row: Row, matcher: Matcher) -> Bool
     /// `_token_match` with the source row index, as upstream passes it
-    /// (source/mode.c:150-155). The switcher asks this one; the default asks
-    /// `matches(_:matcher:)`. `combi` routes it to the mode owning the row.
+    /// (source/mode.c:150-155); by default the row's text must match. `combi`
+    /// routes it to the mode owning the row.
     func matches(_ row: Row, at index: Int, matcher: Matcher) -> Bool
     /// `_preprocess_input` (source/mode.c:212-217): the query the matcher is
     /// built from, asked before each non-empty refilter (source/view.c:833).
@@ -74,14 +72,11 @@ public protocol Mode: AnyObject {
     /// An image file a source row shows as itself rather than as its Finder
     /// icon, as a script's `\0icon` row does; nil for none, the default.
     func iconImagePath(at row: Int) -> String?
-    /// `_result`. `input` is the query: set it to replace the query, or to nil
-    /// to clear it. `selectedRow` is the source row, or nil when none applies.
-    func result(_ action: MenuAction, input: inout String?, selectedRow: Int?) -> ModeResult
-    /// `_result` with MENU_CUSTOM_ACTION (include/mode.h:72,78,90) as `alt`,
-    /// set by kb-accept-alt and kb-accept-custom-alt (source/view.c:1280-1293,
-    /// 1302-1309). Only `run` reads it (source/modes/run.c:456); the default
-    /// ignores it. A requirement, so a call through `any Mode` reaches a
-    /// mode's own version.
+    /// `_result`. `alt` is MENU_CUSTOM_ACTION (include/mode.h:72,78,90), set
+    /// by kb-accept-alt and kb-accept-custom-alt (source/view.c:1280-1293,
+    /// 1302-1309); only `run` reads it (source/modes/run.c:456). `input` is the
+    /// query: set it to replace the query, or to nil to clear it.
+    /// `selectedRow` is the source row, or nil when none applies.
     func result(_ action: MenuAction, alt: Bool, input: inout String?, selectedRow: Int?) -> ModeResult
     /// `_result` with MENU_COMPLETE (include/mode.h:88), sent by
     /// kb-mode-complete (source/view.c:1128-1136). `selectedRow` is the
@@ -101,17 +96,15 @@ extension Mode {
     public func iconPath(at row: Int) -> String? { nil }
     public func iconImagePath(at row: Int) -> String? { nil }
 
-    public func matches(_ row: Row, matcher: Matcher) -> Bool {
-        matcher.matches(row.text)
-    }
     public func matches(_ row: Row, at index: Int, matcher: Matcher) -> Bool {
-        matches(row, matcher: matcher)
+        matcher.matches(row.text)
     }
     public func preprocessInput(_ input: String) -> String { input }
     public func completion(at row: Int) -> String { rows[row].text }
 
-    public func result(_ action: MenuAction, alt: Bool, input: inout String?, selectedRow: Int?) -> ModeResult {
-        result(action, input: &input, selectedRow: selectedRow)
+    /// `result` without `alt`.
+    public func result(_ action: MenuAction, input: inout String?, selectedRow: Int?) -> ModeResult {
+        result(action, alt: false, input: &input, selectedRow: selectedRow)
     }
 
     public func complete(input: inout String?, selectedRow: Int?) -> ModeResult? { nil }

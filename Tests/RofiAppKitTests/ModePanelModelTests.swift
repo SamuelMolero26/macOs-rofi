@@ -13,7 +13,7 @@ private final class MarkupMode: Mode {
         self.markupRows = markupRows
     }
 
-    func result(_ action: MenuAction, input: inout String?, selectedRow: Int?) -> ModeResult { .exit }
+    func result(_ action: MenuAction, alt: Bool, input: inout String?, selectedRow: Int?) -> ModeResult { .exit }
 }
 
 /// Rows "1"..."count" that record the row accepted, then exit.
@@ -26,7 +26,7 @@ private final class NumberedMode: Mode {
         rows = (1...count).map { Row(parsing: "\($0)") }
     }
 
-    func result(_ action: MenuAction, input: inout String?, selectedRow: Int?) -> ModeResult {
+    func result(_ action: MenuAction, alt: Bool, input: inout String?, selectedRow: Int?) -> ModeResult {
         accepted = selectedRow
         return .exit
     }

@@ -98,7 +98,7 @@ public final class SshMode: Mode {
     public var message: String? { failure }
 
     /// `ssh_token_match` (ssh.c:698-708): the host or any one alias.
-    public func matches(_ row: Row, matcher: Matcher) -> Bool {
+    public func matches(_ row: Row, at index: Int, matcher: Matcher) -> Bool {
         guard let host = hostsByText[row.text] else { return matcher.matches(row.text) }
         return ([host.hostname] + host.aliases).contains { matcher.matches($0) }
     }
@@ -112,7 +112,7 @@ public final class SshMode: Mode {
     }
 
     /// `ssh_mode_result` (ssh.c:626-647).
-    public func result(_ action: MenuAction, input: inout String?, selectedRow: Int?) -> ModeResult {
+    public func result(_ action: MenuAction, alt: Bool, input: inout String?, selectedRow: Int?) -> ModeResult {
         failure = nil
         switch action {
         case .cancel:

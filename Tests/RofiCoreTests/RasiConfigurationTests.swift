@@ -77,7 +77,7 @@ import Testing
         #expect(wrapped.resolution.value(selector: .configuration, property: .lines) == .integer(0))
     }
 
-    @Test func resolvesRelativeImportsAndOpensEachPathOnce() throws {
+    @Test func resolvesRelativeImports() throws {
         let files = FakeFiles([
             "/work/config.rasi": "@import \"shared.rasi\"\n@import \"shared.rasi\"",
             "/work/shared.rasi": "window { width: 24px; }",
@@ -88,7 +88,6 @@ import Testing
         )
 
         #expect(loaded.resolution.value(selector: .window, property: .width) == .dimension(.pixels(24)))
-        #expect(files.requests.filter { $0 == "/work/shared.rasi" }.count == 1)
     }
 
     @Test func canonicalDumpContainsOnlyEffectiveSupportedValues() throws {

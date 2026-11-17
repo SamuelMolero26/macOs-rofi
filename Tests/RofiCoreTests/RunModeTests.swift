@@ -134,7 +134,7 @@ private final class CompleterTree: FileBrowserFileSystem {
         inTerminal: Bool = false
     ) -> ModeResult {
         var input = input
-        return mode.result(action, runInTerminal: inTerminal, input: &input, selectedRow: row)
+        return mode.result(action, alt: inTerminal, input: &input, selectedRow: row)
     }
 
     /// A history file in a fresh directory, seeded with `contents`.
@@ -527,8 +527,8 @@ private final class CompleterTree: FileBrowserFileSystem {
         let mode = make()
         _ = complete(mode, row: 0)
         let matcher = Matcher(query: "docs", options: MatchOptions())
-        #expect(mode.matches(mode.rows[1], matcher: matcher))
-        #expect(!mode.matches(mode.rows[2], matcher: matcher))
+        #expect(mode.matches(mode.rows[1], at: 1, matcher: matcher))
+        #expect(!mode.matches(mode.rows[2], at: 2, matcher: matcher))
         #expect(mode.completion(at: 2) == "my file's.txt")
         #expect(mode.iconPath(at: 1) == "/home/u/Docs")
     }

@@ -8,21 +8,16 @@ public struct ApplicationRecord: Equatable, Sendable {
     public let identifier: String
     public let displayName: String
     public let bundlePath: String
-    public let iconPath: String
 
     /// Creates a normalized application record. A localized display name wins
     /// over the bundle name, then the bundle's filename supplies the fallback.
     /// Missing identifiers use the bundle path as a stable local identity.
-    public init(
-        identifier: String?, localizedDisplayName: String?, bundleName: String?, bundlePath: String,
-        iconPath: String? = nil
-    ) {
+    public init(identifier: String?, localizedDisplayName: String?, bundleName: String?, bundlePath: String) {
         self.identifier = nonEmptyApplicationValue(identifier) ?? bundlePath
         self.displayName =
             nonEmptyApplicationValue(localizedDisplayName) ?? nonEmptyApplicationValue(bundleName)
             ?? URL(fileURLWithPath: bundlePath).deletingPathExtension().lastPathComponent
         self.bundlePath = bundlePath
-        self.iconPath = nonEmptyApplicationValue(iconPath) ?? bundlePath
     }
 }
 

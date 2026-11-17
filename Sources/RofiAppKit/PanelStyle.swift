@@ -216,8 +216,7 @@ private struct ThemeMapping {
         for declaration in resolution.declarations {
             guard ["entry", "prompt", "message", "button", "mode-switcher"].contains(declaration.selector.name)
             else { continue }
-            let label = ([declaration.selector.name] + declaration.selector.states).joined(separator: " ")
-            let key = "\(label) \(declaration.property.rawValue)"
+            let key = "\(declaration.selector.label) \(declaration.property.rawValue)"
             guard seen.insert(key).inserted else { continue }
             warn(
                 declaration, .unsupportedProperty,
@@ -228,7 +227,7 @@ private struct ThemeMapping {
     private mutating func warn(_ declaration: RasiResolvedDeclaration, _ code: RasiDiagnosticCode, _ message: String) {
         warnings.append(
             RasiDiagnostic(
-                severity: .warning, code: code, message: message,
+                code: code, message: message,
                 source: declaration.source, line: declaration.line, column: declaration.column))
     }
 

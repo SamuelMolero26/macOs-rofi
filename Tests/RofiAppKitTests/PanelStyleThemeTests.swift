@@ -112,7 +112,6 @@ import Testing
         #expect(warnings.map(\.code) == [.unsupportedValue])
         #expect(warnings.first?.source == "theme.rasi")
         #expect(warnings.first?.line == 2)
-        #expect(warnings.first?.severity == .warning)
     }
 
     @Test func dimensionsConvertToPointsAndClampToTheVisibleFrame() throws {
@@ -240,5 +239,5 @@ import Testing
 private final class EmptyMode: Mode {
     let name = "e"
     let rows: [Row] = []
-    func result(_ action: MenuAction, input: inout String?, selectedRow: Int?) -> ModeResult { .exit }
+    func result(_ action: MenuAction, alt: Bool, input: inout String?, selectedRow: Int?) -> ModeResult { .exit }
 }

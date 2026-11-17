@@ -241,8 +241,9 @@ private struct Opened: Equatable {
     @Test func matchesOnTheName_filebrowser_c_611() {
         let mode = make()
         let matcher = Matcher(query: "alpha", options: MatchOptions())
-        #expect(mode.matches(mode.rows[row(mode, "Alpha.md")], matcher: matcher))
-        #expect(!mode.matches(mode.rows[row(mode, "Docs")], matcher: matcher))
+        let (alpha, docs) = (row(mode, "Alpha.md"), row(mode, "Docs"))
+        #expect(mode.matches(mode.rows[alpha], at: alpha, matcher: matcher))
+        #expect(!mode.matches(mode.rows[docs], at: docs, matcher: matcher))
     }
 
     // filebrowser.c:620-638 fetches an icon per entry by its path; the up row
