@@ -141,7 +141,7 @@ if ["-help", "-h", "--help"].contains(where: args.has) {
 }
 
 if ["-version", "-v"].contains(where: args.has) {
-    finishAction("Version: development\n")
+    finishAction("Version: \(rofiVersion)\n")
 }
 
 if let message = args.string("-e") {
