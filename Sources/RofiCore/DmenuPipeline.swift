@@ -277,9 +277,6 @@ public struct DmenuPipeline: Sendable {
 
 }
 
-/// Source compatibility for the first no-UI dmenu implementation.
-public typealias DmenuDump = DmenuPipeline
-
 /// `DEFAULT_MENU_LINES` (include/settings.h:231).
 private let defaultMenuLines: UInt32 = 15
 

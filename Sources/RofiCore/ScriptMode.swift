@@ -187,7 +187,7 @@ public final class ScriptMode: Mode {
         case "markup-rows": markupRows = isTrue
         case "urgent": urgentRanges += parseRowRanges(value)
         case "active": activeRanges += parseRowRanges(value)
-        case "delim": delimiter = bytes.count == 1 ? bytes[bytes.startIndex] : parseSeparator(value)
+        case "delim": delimiter = parseSeparator(Array(bytes))
         case "no-custom": noCustom = isTrue
         case "use-hot-keys": useHotKeys = isTrue
         case "keep-selection": keepSelection = isTrue
@@ -199,21 +199,6 @@ public final class ScriptMode: Mode {
         default: break
         }
     }
-}
-
-/// Creates mode lists that do not contain `drun`. Application-mode assembly
-/// must use the records-and-launcher overload so RofiCore stays platform-free.
-public func makeModes(_ specs: [ModeSpec]) -> [any Mode] {
-    precondition(
-        !withCombined(specs).contains { if case .drun = $0 { true } else { false } },
-        "drun mode requires injected application records and launcher")
-    return makeModes(
-        specs, applications: { [] },
-        launcher: { _ in
-            .failure(
-                ApplicationLaunchFailure(
-                    command: "launch application", reason: "application launcher is unavailable"))
-        })
 }
 
 /// One mode per entry of the mode list (source/rofi.c:790-826).
@@ -251,10 +236,13 @@ public func makeModes(
     func make(_ spec: ModeSpec) -> any Mode {
         switch spec {
         case .script(let name, let path): ScriptMode(name: name, command: path, modeNames: specs.map(\.name))
-        case .window(let format, let matchFields, let command, let terminal, let runCommand, let runShellCommand):
+        case .window(
+            let format, let matchFields, let command, let terminal, let runCommand, let runShellCommand,
+            let hideActiveWindow, let closeOnDelete):
             WindowMode(
                 windows: windowSystem.windows, raise: windowSystem.raise, close: windowSystem.close, format: format,
-                matchFields: matchFields, windowCommand: command, terminal: terminal, runCommand: runCommand,
+                matchFields: matchFields, windowCommand: command, hideActiveWindow: hideActiveWindow,
+                closeOnDelete: closeOnDelete, terminal: terminal, runCommand: runCommand,
                 runShellCommand: runShellCommand, launcher: commandLauncher, writeScript: scriptWriter)
         case .run(let historyPath, let terminal, let runCommand, let runShellCommand, let listCommand):
             RunMode(

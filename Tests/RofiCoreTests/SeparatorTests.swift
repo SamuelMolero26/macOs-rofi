@@ -1,6 +1,8 @@
 import RofiCore
 import Testing
 
+private func parseSeparator(_ arg: String) -> UInt8 { RofiCore.parseSeparator(Array(arg.utf8)) }
+
 // Contract: helper_parse_char, rofi source/helper.c:383-429.
 @Suite struct SeparatorTests {
     @Test func singleCharacterIsLiteral() {

@@ -258,7 +258,22 @@ private final class ConfigFixture {
             window
                 == .window(
                     format: "{t}", matchFields: "title", command: "yabai {window}", terminal: "kitty",
-                    runCommand: "{cmd}", runShellCommand: "{terminal} -e {cmd}"))
+                    runCommand: "{cmd}", runShellCommand: "{terminal} -e {cmd}", hideActiveWindow: false,
+                    closeOnDelete: true))
+        // window.c:704-708, 833-838: the `configuration { window { ... } }`
+        // booleans.
+        let section = try RasiResolver().resolve(
+            RasiSource(
+                identity: "t", text: "configuration { window { hide-active-window: true; close-on-delete: false; } }"))
+        guard
+            case .window(_, _, _, _, _, _, let hide, let closeOnDelete) = try ShowOptions(
+                arguments: Arguments(["rofi"]), configuration: section
+            ).modes.first
+        else {
+            Issue.record("window expected")
+            return
+        }
+        #expect(hide && !closeOnDelete)
     }
 
     // source/rofi.c:935-937, 161-168: `-show` picks the first mode with that

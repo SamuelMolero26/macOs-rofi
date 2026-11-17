@@ -13,13 +13,7 @@ public struct RasiSource: Equatable, Sendable {
         guard let text = String(bytes: bytes, encoding: .utf8) else {
             throw RasiFailure(
                 diagnostic: RasiDiagnostic(
-                    code: .invalidUTF8,
-                    message: "source is not valid UTF-8",
-                    source: identity,
-                    line: 1,
-                    column: 1
-                )
-            )
+                    .invalidUTF8, "source is not valid UTF-8", at: RasiPoint(source: identity, line: 1, column: 1)))
         }
         self.init(identity: identity, text: text)
     }
@@ -64,6 +58,10 @@ public struct RasiDiagnostic: Equatable, Sendable {
         self.line = line
         self.column = column
     }
+
+    init(_ code: RasiDiagnosticCode, _ message: String, at point: RasiPoint) {
+        self.init(code: code, message: message, source: point.source, line: point.line, column: point.column)
+    }
 }
 
 public struct RasiFailure: Error, Equatable, CustomStringConvertible, Sendable {
@@ -83,8 +81,8 @@ public struct RasiSelector: Hashable, Sendable {
     public let states: [String]
 
     public init(name: String, states: [String] = []) {
-        let normalizedName = Self.normalize(name.hasPrefix("#") ? String(name.dropFirst()) : name)
-        var normalizedStates = Array(Set(states.map(Self.normalize))).sorted()
+        let normalizedName = (name.hasPrefix("#") ? String(name.dropFirst()) : name).lowercased()
+        var normalizedStates = Array(Set(states.map { $0.lowercased() })).sorted()
         if normalizedName == "element",
             normalizedStates.contains("selected") || normalizedStates.contains("alternate"),
             !normalizedStates.contains("normal"),
@@ -104,14 +102,19 @@ public struct RasiSelector: Hashable, Sendable {
     public static let mainbox = RasiSelector(name: "mainbox")
     public static let listview = RasiSelector(name: "listview")
 
+    /// A `name { ... }` section inside `configuration`, a mode's settings
+    /// (lexer/theme-parser.y:485-497): the configuration selector with the
+    /// section as its one state.
+    public static func configurationSection(_ name: String) -> RasiSelector {
+        RasiSelector(name: "configuration", states: [name])
+    }
+
     public static func element(states: [String]) -> RasiSelector {
         RasiSelector(name: "element", states: states)
     }
 
     /// The name and its states, as written in a dump or a warning.
     public var label: String { ([name] + states).joined(separator: " ") }
-
-    private static func normalize(_ value: String) -> String { value.lowercased() }
 }
 
 public enum RasiProperty: String, CaseIterable, Sendable {
@@ -124,6 +127,10 @@ public enum RasiProperty: String, CaseIterable, Sendable {
     case location
     case padding
     case border
+    /// `configuration { window { ... } }` booleans (source/modes/window.c:
+    /// 704-708, 833-838).
+    case hideActiveWindow = "hide-active-window"
+    case closeOnDelete = "close-on-delete"
 }
 
 public struct RasiColor: Equatable, Sendable {
@@ -213,6 +220,7 @@ public enum RasiResolvedValue: Equatable, Sendable {
     case border(RasiBorder)
     case integer(Int)
     case location(RasiLocation)
+    case boolean(Bool)
 }
 
 public struct RasiResolvedDeclaration: Equatable, Sendable {
