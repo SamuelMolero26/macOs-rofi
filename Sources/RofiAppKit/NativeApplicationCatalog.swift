@@ -29,7 +29,7 @@ protocol NativeApplicationWorkspace: AnyObject {
 public final class NativeApplicationCatalog {
     private let roots: [URL]
     private let scanRoots: ([URL]) -> [URL]
-    private let readMetadata: (URL) -> ApplicationBundleMetadata?
+    private let readMetadata: @Sendable (URL) -> ApplicationBundleMetadata?
     private let canonicalize: (URL) -> URL
     private let workspace: any NativeApplicationWorkspace
 
@@ -47,7 +47,7 @@ public final class NativeApplicationCatalog {
     init(
         roots: [URL],
         scanRoots: @escaping ([URL]) -> [URL],
-        readMetadata: @escaping (URL) -> ApplicationBundleMetadata?,
+        readMetadata: @escaping @Sendable (URL) -> ApplicationBundleMetadata?,
         canonicalize: @escaping (URL) -> URL,
         workspace: any NativeApplicationWorkspace
     ) {
@@ -62,9 +62,18 @@ public final class NativeApplicationCatalog {
         var applications: [ApplicationRecord] = []
         var seenPaths: Set<String> = []
         var seenIdentifiers: Set<String> = []
+        let candidates = scanRoots(roots)
+        // Bundle reads dominate the scan and NSBundle is thread-safe. One slot
+        // per candidate keeps the scan order, so deduplication is unchanged.
+        var metadata = [ApplicationBundleMetadata?](repeating: nil, count: candidates.count)
+        metadata.withUnsafeMutableBufferPointer { buffer in
+            nonisolated(unsafe) let slots = buffer
+            let read = readMetadata
+            DispatchQueue.concurrentPerform(iterations: candidates.count) { slots[$0] = read(candidates[$0]) }
+        }
 
-        for candidate in scanRoots(roots) {
-            guard let metadata = readMetadata(candidate) else { continue }
+        for (candidate, metadata) in zip(candidates, metadata) {
+            guard let metadata else { continue }
             let workspaceURL = metadata.identifier.flatMap {
                 workspace.applicationURL(forBundleIdentifier: $0)
             }
@@ -129,28 +138,42 @@ private func readApplicationBundleMetadata(at url: URL) -> ApplicationBundleMeta
         info: bundle.infoDictionary)
 }
 
+/// Depth-first, in directory order: an `.app` is collected and not entered,
+/// symlinks and other packages are not followed. `readdir`'s `d_type` avoids a
+/// URL and a stat per entry, since a non-app tree in /Applications can hold
+/// thousands of files.
+/// ponytail: hidden means a dot name; the UF_HIDDEN flag is not checked.
 private func scanApplicationRoots(_ roots: [URL]) -> [URL] {
     var applications: [URL] = []
-    let keys: Set<URLResourceKey> = [.isDirectoryKey, .isSymbolicLinkKey]
-    for root in roots {
-        guard
-            let enumerator = FileManager.default.enumerator(
-                at: root, includingPropertiesForKeys: Array(keys),
-                options: [.skipsHiddenFiles, .skipsPackageDescendants])
-        else { continue }
-
-        for case let url as URL in enumerator {
-            guard let values = try? url.resourceValues(forKeys: keys), values.isDirectory == true else {
-                continue
+    func walk(_ directory: String) {
+        guard let stream = opendir(directory) else { return }
+        var subdirectories: [String] = []
+        while let entry = readdir(stream) {
+            let name = withUnsafeBytes(of: entry.pointee.d_name) {
+                String(decoding: $0.prefix(Int(entry.pointee.d_namlen)), as: UTF8.self)
             }
+            guard !name.hasPrefix(".") else { continue }
+            let path = directory + "/" + name
+            var type = Int32(entry.pointee.d_type)
+            if type == DT_UNKNOWN {
+                var status = stat()
+                type = lstat(path, &status) == 0 && status.st_mode & S_IFMT == S_IFDIR ? DT_DIR : DT_REG
+            }
+            if type == DT_DIR { subdirectories.append(path) }
+        }
+        closedir(stream)
+        for path in subdirectories {
+            let url = URL(fileURLWithPath: path, isDirectory: true)
             if url.pathExtension.caseInsensitiveCompare("app") == .orderedSame {
                 applications.append(url)
-                enumerator.skipDescendants()
-            } else if values.isSymbolicLink == true {
-                enumerator.skipDescendants()
+            } else if url.pathExtension.isEmpty
+                || (try? url.resourceValues(forKeys: [.isPackageKey]))?.isPackage != true
+            {
+                walk(path)
             }
         }
     }
+    for root in roots { walk(root.path) }
     return applications
 }
 
