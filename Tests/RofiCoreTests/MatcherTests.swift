@@ -153,4 +153,18 @@ import Testing
         #expect(!matcher.matches("web", meta: "browser"))
         #expect(!matcher.matches("web", meta: nil))
     }
+
+    // source/modes/window.c:427-470: the first field is tried when non-empty,
+    // each later non-empty one only while the token still equals its invert
+    // flag. So tokens split across fields, a negated token must miss them all,
+    // and an empty first field leaves a negated token failed.
+    @Test func fieldsRetryEachTokenFieldByField_window_c_438() {
+        let matcher = Matcher(query: "fox web", options: MatchOptions())
+        #expect(matcher.matches(fields: ["firefox", "", "web"]))
+        #expect(!matcher.matches(fields: ["firefox", "browser"]))
+        let negated = Matcher(query: "-web", options: MatchOptions())
+        #expect(negated.matches(fields: ["firefox", "browser"]))
+        #expect(!negated.matches(fields: ["firefox", "", "web"]))
+        #expect(!negated.matches(fields: ["", "browser"]))
+    }
 }
