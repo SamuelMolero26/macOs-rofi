@@ -26,6 +26,47 @@ class CLIContractTests(unittest.TestCase):
             check=False,
         )
 
+    def test_help(self):
+        expected = (
+            b"Usage:\n"
+            b"  rofi [options]\n"
+            b"  rofi -show <mode> [options]\n"
+            b"  rofi -dmenu [options]\n"
+            b"\n"
+            b"General options:\n"
+            b"  -help, -h, --help  Show this help and exit.\n"
+            b"  -version, -v       Show version and exit.\n"
+            b"  -show <mode>       Show an enabled mode.\n"
+            b"  -modes <list>      Set enabled modes.\n"
+            b"  -dmenu             Read menu entries from standard input.\n"
+            b"  -dump-config       Print resolved configuration and exit.\n"
+            b"\n"
+            b"Configuration options:\n"
+            b"  -config <path>     Load configuration from a file.\n"
+            b"  -no-config         Skip configuration loading.\n"
+            b"  -theme <theme>     Load a theme by name or path.\n"
+            b"  -theme-str <rasi>  Apply an inline Rasi theme fragment.\n"
+            b"\n"
+            b"Built-in modes:\n"
+            b"  run, ssh, drun, combi, keys, filebrowser\n"
+        )
+        for option in ("-help", "-h", "--help"):
+            with self.subTest(option=option):
+                result = self.run_rofi("rofi", option, "-config", "/does/not/exist")
+
+                self.assertEqual(result.returncode, 0)
+                self.assertEqual(result.stdout, expected)
+                self.assertEqual(result.stderr, b"")
+
+    def test_version(self):
+        for option in ("-version", "-v"):
+            with self.subTest(option=option):
+                result = self.run_rofi("rofi", option, "-config", "/does/not/exist")
+
+                self.assertEqual(result.returncode, 0)
+                self.assertEqual(result.stdout, b"Version: development\n")
+                self.assertEqual(result.stderr, b"")
+
     def test_exact_dmenu_basename_starts_dmenu_mode(self):
         result = self.run_rofi("bin/dmenu", "-dump")
 
