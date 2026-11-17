@@ -1,0 +1,150 @@
+name: Release
+
+# Build once, promote once: the tag's source tarball and its sha256 are fixed in
+# staging, and production publishes that exact formula after manual approval.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ github.ref_name }}
+
+jobs:
+  ci:
+    name: CI
+    # ponytail: actionlint 1.7.12 rejects the self-repository `$/` form; switch once it supports it.
+    uses: ./.github/workflows/ci.yml # zizmor: ignore[self-repository]
+
+  candidate:
+    name: Publish pre-release
+    needs: ci
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - name: Verify tag is semver and on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [[ "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::${TAG} is not vX.Y.Z"; exit 1; }
+          status="$(gh api "repos/${GITHUB_REPOSITORY}/compare/main...${GITHUB_SHA}" --jq .status)"
+          [[ "${status}" == "identical" || "${status}" == "behind" ]] || { echo "::error::${TAG} is not on main"; exit 1; }
+
+      - name: Create pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${TAG}" --repo "${GITHUB_REPOSITORY}" \
+            --prerelease --generate-notes --verify-tag
+
+  staging:
+    name: Homebrew checks
+    needs: candidate
+    runs-on: macos-15
+    timeout-minutes: 30
+    environment: staging
+    outputs:
+      sha256: ${{ steps.render.outputs.sha256 }}
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Render formula
+        id: render
+        run: |
+          url="https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${TAG}.tar.gz"
+          curl --fail --location --silent --show-error --output "${RUNNER_TEMP}/source.tar.gz" "${url}"
+          sha256="$(shasum -a 256 "${RUNNER_TEMP}/source.tar.gz" | cut -d ' ' -f 1)"
+          sed -e "s|@URL@|${url}|" -e "s|@SHA256@|${sha256}|" packaging/homebrew/rofi.rb > "${RUNNER_TEMP}/rofi.rb"
+          echo "sha256=${sha256}" >> "${GITHUB_OUTPUT}"
+
+      - name: Install into a throwaway tap
+        run: |
+          brew update
+          brew tap-new --no-git local/staging
+          brew trust local/staging
+          cp "${RUNNER_TEMP}/rofi.rb" "$(brew --repository local/staging)/Formula/rofi.rb"
+
+      - name: brew style
+        run: brew style local/staging/rofi
+
+      - name: brew audit
+        run: brew audit --strict --online local/staging/rofi
+
+      - name: brew install
+        run: brew install --build-from-source local/staging/rofi
+
+      - name: brew test
+        run: brew test local/staging/rofi
+
+  production:
+    name: Publish to Homebrew tap
+    needs: staging
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: production
+    permissions:
+      contents: write
+    env:
+      TAP_REPOSITORY: SamuelMolero26/homebrew-tap
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Update tap formula
+        env:
+          SHA256: ${{ needs.staging.outputs.sha256 }}
+          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
+        run: |
+          url="https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${TAG}.tar.gz"
+          git clone --depth 1 "https://x-access-token:${TAP_TOKEN}@github.com/${TAP_REPOSITORY}.git" "${RUNNER_TEMP}/tap"
+          mkdir -p "${RUNNER_TEMP}/tap/Formula"
+          sed -e "s|@URL@|${url}|" -e "s|@SHA256@|${SHA256}|" packaging/homebrew/rofi.rb > "${RUNNER_TEMP}/tap/Formula/rofi.rb"
+          cd "${RUNNER_TEMP}/tap"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/rofi.rb
+          git commit --message "rofi ${TAG}"
+          git push
+
+      - name: Promote release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "${TAG}" --repo "${GITHUB_REPOSITORY}" --prerelease=false --latest
+
+  smoke:
+    name: Install from published tap
+    needs: production
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+
+    steps:
+      - name: brew install
+        run: |
+          brew tap samuelmolero26/tap
+          brew trust samuelmolero26/tap
+          brew install samuelmolero26/tap/rofi
+          test "$(brew list --versions rofi)" = "rofi ${TAG#v}"
+
+      - name: brew test
+        run: brew test samuelmolero26/tap/rofi
