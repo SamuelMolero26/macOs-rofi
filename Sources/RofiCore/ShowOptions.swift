@@ -2,6 +2,14 @@ import Foundation
 
 /// One entry of the mode list: a script mode or a built-in.
 public enum ModeSpec: Equatable, Sendable {
+    /// `window` (source/modes/window.c:1149) with `-window-format`,
+    /// `-window-match-fields` and `-window-command` (config/config.c:76, 147,
+    /// 155), plus the `-terminal`, `-run-command` and `-run-shell-command`
+    /// its typed commands use (window.c:838-857), and the
+    /// `configuration { window { ... } }` booleans (window.c:704-708, 833-838).
+    case window(
+        format: String, matchFields: String, command: String, terminal: String?, runCommand: String,
+        runShellCommand: String, hideActiveWindow: Bool, closeOnDelete: Bool)
     /// `run` (source/modes/run.c:599) with its history file, nil when
     /// `-disable-history` is set, and the `-terminal`, `-run-command` and
     /// `-run-shell-command` settings (config/config.c:65-74); a nil terminal
@@ -36,6 +44,7 @@ public enum ModeSpec: Equatable, Sendable {
     public var name: String {
         switch self {
         case .script(let name, _): name
+        case .window: "window"
         case .run: "run"
         case .ssh: "ssh"
         case .drun: "drun"
@@ -111,21 +120,29 @@ public struct ShowOptions: Sendable {
     /// each script spec as it is first resolved (source/rofi.c:795-807).
     public var availableModes: [ModeSpec] = []
 
-    /// `environment` locates the user scripts directory.
-    public init(arguments args: Arguments, environment: [String: String] = ProcessInfo.processInfo.environment) throws {
+    /// `configuration` holds the resolved config file settings; `environment`
+    /// locates the user scripts directory.
+    public init(
+        arguments args: Arguments, configuration: RasiResolution? = nil,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) throws {
+        func windowSetting(_ property: RasiProperty, default value: Bool) -> Bool {
+            guard
+                case .boolean(let boolean) = configuration?.value(
+                    selector: .configurationSection("window"), property: property)
+            else { return value }
+            return boolean
+        }
         // xrmoptions.c:75-86 parses switchers, modi, then modes; the last one
         // present wins.
-        // Upstream defaults to `window,drun,run,ssh`, or `drun,run,ssh`
-        // without window mode (config/config.c:36-42). window is not built in
-        // yet, so the default is the latter; it becomes `window,drun,run,ssh`
-        // when window lands.
+        // config/config.c:39.
         let list =
-            args.string("-modes") ?? args.string("-modi") ?? args.string("-switchers") ?? "drun,run,ssh"
+            args.string("-modes") ?? args.string("-modi") ?? args.string("-switchers") ?? "window,drun,run,ssh"
         // Each name resolves to the first available mode with it, built-ins
-        // in upstream's order (source/rofi.c:732-739): run, ssh, drun, combi,
-        // keys, filebrowser.
-        // ponytail: window and recursivebrowser are not built in yet; they
-        // stay "not found".
+        // in upstream's order (source/rofi.c:719-739): window, run, ssh, drun,
+        // combi, keys, filebrowser.
+        // ponytail: windowcd and recursivebrowser are not built in; they stay
+        // "not found".
         // ponytail: upstream reads the filebrowser's settings from the theme
         // (source/modes/filebrowser.c:395-405), not from flags.
         let disableHistory = args.bool("disable-history", default: false)
@@ -135,6 +152,15 @@ public struct ShowOptions: Sendable {
         // `keys` needs the bindings; its errors are added in that order below.
         let parsedKeymap = Result { try Keymap(arguments: args) }
         let builtins: [ModeSpec] = [
+            .window(
+                format: args.string("-window-format") ?? "{c}   {t}",
+                matchFields: args.string("-window-match-fields") ?? "all",
+                command: args.string("-window-command") ?? "wmctrl -i -R {window}",
+                terminal: args.string("-terminal"),
+                runCommand: args.string("-run-command") ?? "{cmd}",
+                runShellCommand: args.string("-run-shell-command") ?? "{terminal} -e {cmd}",
+                hideActiveWindow: windowSetting(.hideActiveWindow, default: false),
+                closeOnDelete: windowSetting(.closeOnDelete, default: true)),
             .run(
                 historyPath: disableHistory ? nil : cacheDirectory(args) + "/rofi-4.runcache",
                 terminal: args.string("-terminal"),
@@ -158,8 +184,6 @@ public struct ShowOptions: Sendable {
         // else a script spec; combi itself and unknown names are skipped with
         // a warning, shown only when combi is used. xrmoptions.c:439-450 parses
         // combi-modi, then combi-modes.
-        // ponytail: upstream's default `window,run` always warns about window,
-        // which does not exist here.
         var combined: [ModeSpec] = []
         var combiWarnings: [String] = []
         let combiList = args.string("-combi-modes") ?? args.string("-combi-modi") ?? "window,run"
@@ -178,9 +202,9 @@ public struct ShowOptions: Sendable {
             modes: combined, displayNames: combined.map { args.string("-display-" + $0.name) ?? $0.name },
             displayFormat: args.bool("combi-hide-mode-prefix", default: false)
                 ? nil : args.string("-combi-display-format") ?? "{mode} {text}")
-        // source/rofi.c:732-739: combi sits after drun.
+        // source/rofi.c:719-739: combi sits after drun.
         var known = builtins
-        known.insert(combi, at: 3)
+        known.insert(combi, at: 4)
         func resolve(_ token: String) -> ModeSpec? {
             if let spec = known.first(where: { $0.name == token }) { return spec }
             guard let spec = ModeSpec(scriptSpec: token, userScripts: scripts) else { return nil }

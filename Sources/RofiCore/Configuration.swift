@@ -276,13 +276,26 @@ private struct CanonicalRasi {
             effective[DeclarationKey(selector: declaration.selector, property: declaration.property)] =
                 declaration.value
         }
-        let selectors = Set(effective.keys.map(\.selector)).sorted(by: selectorOrder)
-        let blocks = selectors.map { selector in
-            let declarations = RasiProperty.allCases.compactMap { property -> String? in
+        func declarations(_ selector: RasiSelector, indent: String) -> [String] {
+            RasiProperty.allCases.compactMap { property in
                 guard let value = effective[DeclarationKey(selector: selector, property: property)] else { return nil }
-                return "    \(property.rawValue): \(serialize(value));"
+                return "\(indent)\(property.rawValue): \(serialize(value));"
             }
-            return "\(selector.label) {\n\(declarations.joined(separator: "\n"))\n}"
+        }
+        let used = Set(effective.keys.map(\.selector))
+        // Sections print nested in configuration, as they are written
+        // (lexer/theme-parser.y:485-497).
+        let sections = used.filter { $0.name == "configuration" && !$0.states.isEmpty }.sorted { $0.label < $1.label }
+        var selectors = used.subtracting(sections)
+        if !sections.isEmpty { selectors.insert(.configuration) }
+        let blocks = selectors.sorted(by: selectorOrder).map { selector in
+            var lines = declarations(selector, indent: "    ")
+            if selector == .configuration {
+                for section in sections {
+                    lines += ["    \(section.states[0]) {"] + declarations(section, indent: "        ") + ["    }"]
+                }
+            }
+            return "\(selector.label) {\n\(lines.joined(separator: "\n"))\n}"
         }
         text = blocks.isEmpty ? "" : blocks.joined(separator: "\n\n") + "\n"
     }
@@ -300,6 +313,13 @@ private func overrideBlock(_ arguments: Arguments) -> String? {
         declarations.append("location: \(rawLocation);")
     } else if arguments.has("-b") {
         declarations.append("location: \(RasiLocation.south.rawValue);")
+    }
+    // `-window-<setting> <value>` (source/xrmoptions.c:849-860).
+    let window = [RasiProperty.hideActiveWindow, .closeOnDelete].compactMap { property in
+        arguments.string("-window-" + property.rawValue).map { "\(property.rawValue): \($0);" }
+    }
+    if !window.isEmpty {
+        declarations.append("window { \(window.joined(separator: " ")) }")
     }
     return declarations.isEmpty ? nil : "configuration { \(declarations.joined(separator: " ")) }"
 }
@@ -331,6 +351,8 @@ private func serialize(_ value: RasiResolvedValue) -> String {
         return String(integer)
     case .location(let location):
         return location.rawValue
+    case .boolean(let boolean):
+        return String(boolean)
     }
 }
 

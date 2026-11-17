@@ -4,6 +4,8 @@
 
 Accepted — 2026-11-05
 
+Amended — 2026-11-16: configuration sections carry mode settings (#96).
+
 ## Context
 
 GitHub issue #73 adds configuration and theming to the native macOS port. The
@@ -55,6 +57,7 @@ The parser accepts UTF-8 with LF or CRLF newlines and the following syntax:
 | Dimensions | Unitless values, `px`, `em`, `ch`, and `%` are supported where a distance is expected. Unitless distances mean `px`. |
 | Insets | One through four dimensions use CSS order: all; vertical/horizontal; top/horizontal/bottom; top/right/bottom/left. |
 | Strings and booleans | Single-quoted or double-quoted strings and `true`/`false` are parsed where configuration values require them. |
+| Configuration sections | A `name { ... }` block directly inside `configuration` holds one mode's settings, as upstream `lexer/theme-parser.y:485-497`. Sections nest one level and take a single name. A section that is not supported warns per declaration, like any unsupported selector; it never fails startup. |
 
 The parser must consume syntactically valid declarations even when their
 selector, property, or value type is not supported. This permits representative
@@ -126,7 +129,8 @@ upstream one-flag-per-theme-property options.
 deterministic UTF-8 Rasi representation to stdout, and exits without opening an
 AppKit window. Its output contains a canonical `configuration` block and
 canonical selector blocks sufficient to round-trip every supported resolved
-value. It excludes source paths, comments, unsupported declarations, and
+value. Configuration sections print nested inside the `configuration` block,
+as they are written. It excludes source paths, comments, unsupported declarations, and
 diagnostics. Warnings still go to stderr.
 
 ### 3. Map the supported properties through shared PanelStyle
@@ -154,6 +158,22 @@ The supported selector/property mapping is:
 | `window` or `configuration` `location` | `location` | Panel placement in the visible frame. |
 | `window`, then `mainbox`, then `*` `padding` | `contentInsets` | Edge constraints around panel content. The first defined selector in that order wins. |
 | `window`, then `mainbox`, then `*` `border` | `borderWidths` | Per-edge panel border widths. The first defined selector in that order wins. |
+
+Configuration sections are mode settings, not `PanelStyle` slots. They reach
+the mode through `ShowOptions`, never AppKit, and are read only from a section
+of the same name, as upstream `rofi_config_find_widget`
+(`source/theme.c:782-788`). The supported settings are:
+
+| Rasi source | Effect |
+| --- | --- |
+| `configuration { window { hide-active-window: <bool>; } }` | `window` mode leaves out the focused window. Default `false`. |
+| `configuration { window { close-on-delete: <bool>; } }` | `false` keeps rofi open after delete-entry closes a window. Default `true`. |
+
+A setting accepts exactly `true` or `false`; anything else warns and keeps
+the default. `-window-<setting> <value>` on the command line sets the same
+value with direct-flag precedence, as upstream `source/xrmoptions.c:849-860`.
+Other modes' sections, such as `filebrowser`, may be added the same way as an
+ordinary compatible change.
 
 For color declarations on `entry`, `prompt`, `message`, `button`, or
 `mode-switcher`, the resolver may fill a more specific `PanelStyle` color slot
