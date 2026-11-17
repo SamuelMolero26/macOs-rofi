@@ -5,10 +5,11 @@ public enum ModeSpec: Equatable, Sendable {
     /// `window` (source/modes/window.c:1149) with `-window-format`,
     /// `-window-match-fields` and `-window-command` (config/config.c:76, 147,
     /// 155), plus the `-terminal`, `-run-command` and `-run-shell-command`
-    /// its typed commands use (window.c:838-857).
+    /// its typed commands use (window.c:838-857), and the
+    /// `configuration { window { ... } }` booleans (window.c:704-708, 833-838).
     case window(
         format: String, matchFields: String, command: String, terminal: String?, runCommand: String,
-        runShellCommand: String)
+        runShellCommand: String, hideActiveWindow: Bool, closeOnDelete: Bool)
     /// `run` (source/modes/run.c:599) with its history file, nil when
     /// `-disable-history` is set, and the `-terminal`, `-run-command` and
     /// `-run-shell-command` settings (config/config.c:65-74); a nil terminal
@@ -119,8 +120,19 @@ public struct ShowOptions: Sendable {
     /// each script spec as it is first resolved (source/rofi.c:795-807).
     public var availableModes: [ModeSpec] = []
 
-    /// `environment` locates the user scripts directory.
-    public init(arguments args: Arguments, environment: [String: String] = ProcessInfo.processInfo.environment) throws {
+    /// `configuration` holds the resolved config file settings; `environment`
+    /// locates the user scripts directory.
+    public init(
+        arguments args: Arguments, configuration: RasiResolution? = nil,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) throws {
+        func windowSetting(_ property: RasiProperty, default value: Bool) -> Bool {
+            guard
+                case .boolean(let boolean) = configuration?.value(
+                    selector: .configurationSection("window"), property: property)
+            else { return value }
+            return boolean
+        }
         // xrmoptions.c:75-86 parses switchers, modi, then modes; the last one
         // present wins.
         // config/config.c:39.
@@ -146,7 +158,9 @@ public struct ShowOptions: Sendable {
                 command: args.string("-window-command") ?? "wmctrl -i -R {window}",
                 terminal: args.string("-terminal"),
                 runCommand: args.string("-run-command") ?? "{cmd}",
-                runShellCommand: args.string("-run-shell-command") ?? "{terminal} -e {cmd}"),
+                runShellCommand: args.string("-run-shell-command") ?? "{terminal} -e {cmd}",
+                hideActiveWindow: windowSetting(.hideActiveWindow, default: false),
+                closeOnDelete: windowSetting(.closeOnDelete, default: true)),
             .run(
                 historyPath: disableHistory ? nil : cacheDirectory(args) + "/rofi-4.runcache",
                 terminal: args.string("-terminal"),

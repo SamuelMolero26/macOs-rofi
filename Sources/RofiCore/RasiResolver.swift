@@ -286,6 +286,12 @@ private struct Evaluator {
                 return nil
             }
             return .location(location)
+        case .hideActiveWindow, .closeOnDelete:
+            guard let boolean = ["true": true, "false": false][value] else {
+                warn(.invalidValue, "\(property.rawValue) requires true or false", at: point)
+                return nil
+            }
+            return .boolean(boolean)
         }
     }
 
@@ -567,7 +573,9 @@ private struct Evaluator {
 
     func isSupported(_ selector: RasiSelector) -> Bool {
         switch selector.name {
-        case "*", "configuration", "window", "mainbox", "listview":
+        case "configuration":
+            return selector.states.isEmpty || selector == .configurationSection("window")
+        case "*", "window", "mainbox", "listview":
             return selector.states.isEmpty
         case "entry", "prompt", "message", "button", "mode-switcher":
             return selector.states.allSatisfy { $0 == "selected" }
@@ -584,6 +592,9 @@ private struct Evaluator {
     }
 
     func supports(_ property: RasiProperty, on selector: RasiSelector) -> Bool {
+        let windowSettings: [RasiProperty] = [.hideActiveWindow, .closeOnDelete]
+        if selector == .configurationSection("window") { return windowSettings.contains(property) }
+        if windowSettings.contains(property) { return false }
         switch selector.name {
         case "*":
             return ![.lines, .location].contains(property)

@@ -251,10 +251,13 @@ public func makeModes(
     func make(_ spec: ModeSpec) -> any Mode {
         switch spec {
         case .script(let name, let path): ScriptMode(name: name, command: path, modeNames: specs.map(\.name))
-        case .window(let format, let matchFields, let command, let terminal, let runCommand, let runShellCommand):
+        case .window(
+            let format, let matchFields, let command, let terminal, let runCommand, let runShellCommand,
+            let hideActiveWindow, let closeOnDelete):
             WindowMode(
                 windows: windowSystem.windows, raise: windowSystem.raise, close: windowSystem.close, format: format,
-                matchFields: matchFields, windowCommand: command, terminal: terminal, runCommand: runCommand,
+                matchFields: matchFields, windowCommand: command, hideActiveWindow: hideActiveWindow,
+                closeOnDelete: closeOnDelete, terminal: terminal, runCommand: runCommand,
                 runShellCommand: runShellCommand, launcher: commandLauncher, writeScript: scriptWriter)
         case .run(let historyPath, let terminal, let runCommand, let runShellCommand, let listCommand):
             RunMode(

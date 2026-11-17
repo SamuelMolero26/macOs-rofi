@@ -58,10 +58,10 @@ func reportFailedModes(_ modes: [any Mode]) -> Bool {
 /// accepting and cancelling both exit 0 (source/rofi.c:151).
 /// ponytail: `-e`, `-help` and the other actions are not implemented and
 /// leave rofi unsure what to show.
-@MainActor func runShow(_ args: Arguments, style: PanelStyle) -> Never {
+@MainActor func runShow(_ args: Arguments, style: PanelStyle, configuration: RasiResolution) -> Never {
     let options: ShowOptions
     do {
-        options = try ShowOptions(arguments: args)
+        options = try ShowOptions(arguments: args, configuration: configuration)
     } catch {
         fail("\(error)", status: (error as? InvalidModeConfiguration)?.exitStatus ?? EXIT_FAILURE)
     }
@@ -127,7 +127,9 @@ if args.has("-dump-config") {
 
 // source/rofi.c:1043-1057.
 let invokedAsDmenu = args.argv.first?.split(separator: "/").last == "dmenu"
-guard args.has("-dmenu") || invokedAsDmenu else { runShow(args, style: style) }
+guard args.has("-dmenu") || invokedAsDmenu else {
+    runShow(args, style: style, configuration: configuration.resolution)
+}
 
 let pipeline: DmenuPipeline
 do {

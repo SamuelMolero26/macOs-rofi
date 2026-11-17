@@ -104,6 +104,13 @@ public struct RasiSelector: Hashable, Sendable {
     public static let mainbox = RasiSelector(name: "mainbox")
     public static let listview = RasiSelector(name: "listview")
 
+    /// A `name { ... }` section inside `configuration`, a mode's settings
+    /// (lexer/theme-parser.y:485-497): the configuration selector with the
+    /// section as its one state.
+    public static func configurationSection(_ name: String) -> RasiSelector {
+        RasiSelector(name: "configuration", states: [name])
+    }
+
     public static func element(states: [String]) -> RasiSelector {
         RasiSelector(name: "element", states: states)
     }
@@ -124,6 +131,10 @@ public enum RasiProperty: String, CaseIterable, Sendable {
     case location
     case padding
     case border
+    /// `configuration { window { ... } }` booleans (source/modes/window.c:
+    /// 704-708, 833-838).
+    case hideActiveWindow = "hide-active-window"
+    case closeOnDelete = "close-on-delete"
 }
 
 public struct RasiColor: Equatable, Sendable {
@@ -213,6 +224,7 @@ public enum RasiResolvedValue: Equatable, Sendable {
     case border(RasiBorder)
     case integer(Int)
     case location(RasiLocation)
+    case boolean(Bool)
 }
 
 public struct RasiResolvedDeclaration: Equatable, Sendable {

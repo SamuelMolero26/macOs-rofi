@@ -51,7 +51,7 @@ private struct ParserState {
             if current == "@" || current == "?" {
                 statements.append(try parseDirective())
             } else {
-                statements.append(try parseBlock())
+                statements += try parseBlock()
             }
         }
     }
@@ -82,7 +82,9 @@ private struct ParserState {
         return .load(target: target, kind: kind, point: point)
     }
 
-    private mutating func parseBlock() throws -> RasiStatement {
+    /// The block, then each `name { ... }` section it holds when it is
+    /// `configuration` (lexer/theme-parser.y:485-497).
+    private mutating func parseBlock() throws -> [RasiStatement] {
         let point = currentPoint
         var rawSelectors = ""
         while !isAtEnd && current != "{" {
@@ -109,6 +111,7 @@ private struct ParserState {
         advance()
 
         var declarations: [RasiRawDeclaration] = []
+        var sections: [RasiStatement] = []
         while true {
             try skipTrivia()
             guard !isAtEnd else {
@@ -116,7 +119,37 @@ private struct ParserState {
             }
             if current == "}" {
                 advance()
-                return .block(selectors: selectors, declarations: declarations)
+                return [.block(selectors: selectors, declarations: declarations)] + sections
+            }
+            if selectors == [.configuration], let section = try parseSection() {
+                sections.append(section)
+                continue
+            }
+            declarations.append(try parseDeclaration())
+        }
+    }
+
+    /// `name { declarations }` inside configuration, or nil, consuming
+    /// nothing, when the next declaration is a plain one.
+    private mutating func parseSection() throws -> RasiStatement? {
+        let saved = self
+        let point = currentPoint
+        let name = readIdentifier()
+        try skipTrivia()
+        guard !name.isEmpty, current == "{" else {
+            self = saved
+            return nil
+        }
+        advance()
+        var declarations: [RasiRawDeclaration] = []
+        while true {
+            try skipTrivia()
+            guard !isAtEnd else {
+                throw failure(.malformedStructure, "unbalanced '{'", at: point)
+            }
+            if current == "}" {
+                advance()
+                return .block(selectors: [.configurationSection(name)], declarations: declarations)
             }
             declarations.append(try parseDeclaration())
         }
