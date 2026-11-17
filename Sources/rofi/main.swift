@@ -61,12 +61,12 @@ func reportFailedModes(_ modes: [any Mode]) -> Bool {
 /// Everything outside dmenu: startup errors, then `-show`
 /// (source/rofi.c:1243-1250, 869-958). Only dmenu sets a return code, so
 /// accepting and cancelling both exit 0 (source/rofi.c:151).
-/// ponytail: the remaining actions are not implemented and leave rofi unsure
-/// what to show.
-@MainActor func runShow(_ args: Arguments, style: PanelStyle) -> Never {
+/// ponytail: `-e`, `-help` and the other actions are not implemented and
+/// leave rofi unsure what to show.
+@MainActor func runShow(_ args: Arguments, style: PanelStyle, configuration: RasiResolution) -> Never {
     let options: ShowOptions
     do {
-        options = try ShowOptions(arguments: args)
+        options = try ShowOptions(arguments: args, configuration: configuration)
     } catch {
         fail("\(error)", status: (error as? InvalidModeConfiguration)?.exitStatus ?? EXIT_FAILURE)
     }
@@ -89,7 +89,7 @@ func reportFailedModes(_ modes: [any Mode]) -> Bool {
                 list: listDirectoryOnDisk)
         },
         commandLauncher: launchWithProcess, scriptWriter: writeTemporaryScript,
-        listGenerator: { generateWithProcess($0) }, sshFiles: .disk)
+        listGenerator: { generateWithProcess($0) }, sshFiles: .disk, windowSystem: NativeWindowSystem().system)
     // run_mode_index: a script that cannot start shows an error dialog in
     // place of the view (source/rofi.c:201-216, source/modes/script.c:242-246).
     if reportFailedModes(modes) { exit(EXIT_SUCCESS) }
@@ -170,7 +170,9 @@ if args.has("-dump-config") {
 
 // source/rofi.c:1043-1057.
 let invokedAsDmenu = args.argv.first?.split(separator: "/").last == "dmenu"
-guard args.has("-dmenu") || invokedAsDmenu else { runShow(args, style: style) }
+guard args.has("-dmenu") || invokedAsDmenu else {
+    runShow(args, style: style, configuration: configuration.resolution)
+}
 
 let pipeline: DmenuPipeline
 do {

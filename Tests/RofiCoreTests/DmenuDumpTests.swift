@@ -5,8 +5,8 @@ import Testing
 // Contract: dmenu_mode_dialog -dump path, rofi source/modes/dmenu.c:989-1034;
 // options from source/modes/dmenu.c:550-560, 605-608 and source/helper.c:695-731.
 @Suite struct DmenuDumpTests {
-    private func dump(_ argv: [String]) throws -> DmenuDump {
-        try DmenuDump(arguments: Arguments(["rofi", "-dmenu", "-dump"] + argv))
+    private func dump(_ argv: [String]) throws -> DmenuPipeline {
+        try DmenuPipeline(arguments: Arguments(["rofi", "-dmenu", "-dump"] + argv))
     }
 
     private let fruit = ["apple", "Banana", "cherry"].map { Row(parsing: $0) }
@@ -39,7 +39,7 @@ import Testing
         let args = Arguments(rawArgv: [
             Array("rofi".utf8), Array("-dmenu".utf8), Array("-matching-negate-char".utf8), [0xC2],
         ])
-        #expect(try DmenuDump(arguments: args).match.negateByte == 0xC2)
+        #expect(try DmenuPipeline(arguments: args).match.negateByte == 0xC2)
     }
 
     @Test func readsTheBooleanOptions() throws {

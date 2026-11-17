@@ -307,40 +307,16 @@ public final class RunMode: Mode {
     /// or drop it on failure.
     private func execute(_ command: String, inTerminal: Bool, original: String) -> Bool {
         let line = historyLine(original, command)
-        switch launch(command, inTerminal: inTerminal) {
-        case .success:
-            record(line)
-            return true
-        case .failure(let message):
-            failure = message.text
+        if let message = executeCommand(
+            command, inTerminal: inTerminal, terminal: terminal, runCommand: runCommand,
+            runShellCommand: runShellCommand, launcher: launcher, writeScript: writeScript)
+        {
+            failure = message
             history?.remove(line)
             return false
         }
-    }
-
-    /// `helper_execute_command_env` (helper.c:1448-1460): the template
-    /// is `-run-shell-command` in a terminal, else `-run-command`.
-    private func launch(_ command: String, inTerminal: Bool) -> Result<Void, FailureMessage> {
-        do {
-            let result: Result<Void, ApplicationLaunchFailure>
-            if inTerminal {
-                let plan = try TerminalLaunch.plan(
-                    terminal: terminal, template: runShellCommand, values: ["cmd": command])
-                result = TerminalLaunch.launch(plan, launcher: launcher, writeScript: writeScript)
-            } else {
-                // Not `TerminalLaunch.plan`: its Terminal.app detection looks for
-                // `-e` in the argv and would misread a plain `sed -e ...`.
-                let argv = try parseCommandTemplate(
-                    runCommand, values: ["cmd": command, "terminal": terminal ?? TerminalLaunch.defaultTerminal])
-                result = launcher(argv)
-            }
-            if case .failure(let error) = result { return .failure(FailureMessage(error.dialogText)) }
-            return .success(())
-        } catch let error as CommandTemplateError {
-            return .failure(FailureMessage(error.message))
-        } catch {
-            return .failure(FailureMessage("\(error)"))
-        }
+        record(line)
+        return true
     }
 
     private func historyLine(_ original: String, _ command: String) -> String {
@@ -357,8 +333,30 @@ public final class RunMode: Mode {
     }
 }
 
-/// A launch failure as dialog text.
-private struct FailureMessage: Error {
-    let text: String
-    init(_ text: String) { self.text = text }
+/// `helper_execute_command_env` (helper.c:1448-1460): the template is
+/// `-run-shell-command` in a terminal, else `-run-command`. Returns the
+/// failure as dialog text, nil on success.
+func executeCommand(
+    _ command: String, inTerminal: Bool, terminal: String?, runCommand: String, runShellCommand: String,
+    launcher: CommandLauncher, writeScript: ScriptWriter
+) -> String? {
+    do {
+        let result: Result<Void, ApplicationLaunchFailure>
+        if inTerminal {
+            let plan = try TerminalLaunch.plan(terminal: terminal, template: runShellCommand, values: ["cmd": command])
+            result = TerminalLaunch.launch(plan, launcher: launcher, writeScript: writeScript)
+        } else {
+            // Not `TerminalLaunch.plan`: its Terminal.app detection looks for
+            // `-e` in the argv and would misread a plain `sed -e ...`.
+            let argv = try parseCommandTemplate(
+                runCommand, values: ["cmd": command, "terminal": terminal ?? TerminalLaunch.defaultTerminal])
+            result = launcher(argv)
+        }
+        if case .failure(let error) = result { return error.dialogText }
+        return nil
+    } catch let error as CommandTemplateError {
+        return error.message
+    } catch {
+        return "\(error)"
+    }
 }

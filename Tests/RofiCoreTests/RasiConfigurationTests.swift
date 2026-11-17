@@ -90,22 +90,37 @@ import Testing
         #expect(loaded.resolution.value(selector: .window, property: .width) == .dimension(.pixels(24)))
     }
 
+    // A `name { ... }` section inside configuration (lexer/theme-parser.y:
+    // 485-497) holds a mode's settings, read by rofi_config_find_widget
+    // (source/theme.c:782-788); `-window-<setting> <value>` sets one
+    // (source/xrmoptions.c:849-860). An unknown section warns.
     @Test func canonicalDumpContainsOnlyEffectiveSupportedValues() throws {
         let files = FakeFiles([
             "/work/config.rasi": """
-            configuration { lines: 3; location: 6; ignored: true; }
-            window { background-color: red; background-color: #112233; width: 640px; }
+            configuration {
+                lines: 3; location: 6; ignored: true;
+                window { hide-active-window: true; close-on-delete: true; }
+                filebrowser { directories-first: true; }
+            }
+            window { background-color: red; background-color: #112233; width: 640px; hide-active-window: true; }
             """
         ])
         let loaded = try RasiConfigurationLoader(environment: environment(files: files)).load(
-            arguments: Arguments(["rofi", "-config", "config.rasi"])
+            arguments: Arguments(["rofi", "-config", "config.rasi", "-window-close-on-delete", "false"])
         )
 
+        #expect(
+            loaded.resolution.value(selector: .configurationSection("window"), property: .hideActiveWindow)
+                == .boolean(true))
         #expect(
             loaded.canonicalRasi == """
                 configuration {
                     lines: 3;
                     location: south;
+                    window {
+                        hide-active-window: true;
+                        close-on-delete: false;
+                    }
                 }
 
                 window {
@@ -114,7 +129,7 @@ import Testing
                 }
                 """ + "\n"
         )
-        #expect(loaded.warnings.map(\.code) == [.unsupportedProperty])
+        #expect(loaded.warnings.map(\.code) == [.unsupportedProperty, .unsupportedProperty, .unsupportedProperty])
     }
 
     @Test func explicitMissingConfigIsFatal() {
