@@ -56,22 +56,27 @@ public func discoverExecutables(path: String?, home: String, list: DirectoryList
     return names.sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) }
 }
 
-/// The real `DirectoryLister`: `lstat` for the type, `access(X_OK)` for the
-/// executable bit.
+/// The real `DirectoryLister`: `readdir`'s `d_type` for the type, as upstream
+/// (run.c:299-330), and `access(X_OK)` for the executable bit. No per-entry
+/// stat: `$PATH` holds thousands of entries and this runs before the panel.
 public func listDirectoryOnDisk(_ path: String) -> [PathEntry]? {
-    let manager = FileManager.default
-    guard let names = try? manager.contentsOfDirectory(atPath: path) else { return nil }
-    return names.map { name in
-        let full = path + "/" + name
-        let kind: PathEntry.Kind
-        switch (try? manager.attributesOfItem(atPath: full))?[.type] as? FileAttributeType {
-        case .typeRegular: kind = .regular
-        case .typeSymbolicLink: kind = .symlink
-        case nil: kind = .unknown
-        default: kind = .other
+    guard let directory = opendir(path) else { return nil }
+    defer { closedir(directory) }
+    var entries: [PathEntry] = []
+    while let entry = readdir(directory) {
+        let name = withUnsafeBytes(of: entry.pointee.d_name) {
+            String(decoding: $0.prefix(Int(entry.pointee.d_namlen)), as: UTF8.self)
         }
-        return PathEntry(name: name, kind: kind, isExecutable: manager.isExecutableFile(atPath: full))
+        let kind: PathEntry.Kind =
+            switch Int32(entry.pointee.d_type) {
+            case DT_REG: .regular
+            case DT_LNK: .symlink
+            case DT_UNKNOWN: .unknown
+            default: .other
+            }
+        entries.append(PathEntry(name: name, kind: kind, isExecutable: access(path + "/" + name, X_OK) == 0))
     }
+    return entries
 }
 
 /// The `run` mode (source/modes/run.c): the commands found in `$PATH`, the
