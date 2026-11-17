@@ -3,11 +3,7 @@ import Darwin
 /// Parses a `-sep` value or a script `delim` header the way rofi's
 /// `helper_parse_char` does (source/helper.c:383-429): a single character,
 /// a backslash escape, or `\xHH`. Anything else falls back to newline.
-public func parseSeparator(_ arg: String) -> UInt8 {
-    parseSeparator(Array(arg.utf8))
-}
-
-func parseSeparator(_ bytes: [UInt8]) -> UInt8 {
+public func parseSeparator(_ bytes: [UInt8]) -> UInt8 {
     let backslash = UInt8(ascii: "\\")
     if bytes.count == 1 {
         return bytes[0]

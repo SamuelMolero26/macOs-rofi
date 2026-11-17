@@ -55,6 +55,20 @@ public struct Matcher {
         }
     }
 
+    /// Window mode's `window_match` (source/modes/window.c:427-470): the first
+    /// field is tried when non-empty, each later non-empty one only while the
+    /// token's result still equals its invert flag. An empty first field
+    /// leaves a negated token failed, as upstream.
+    public func matches(fields: [String]) -> Bool {
+        tokens.allSatisfy { token in
+            var test = false
+            for (index, field) in fields.enumerated() where index == 0 || test == token.invert {
+                if !field.isEmpty { test = satisfies(token, subject(field)) }
+            }
+            return test
+        }
+    }
+
     private func subject(_ text: String) -> String {
         normalize ? stripMarks(text) : text
     }
