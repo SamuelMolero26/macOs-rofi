@@ -354,6 +354,35 @@ class CLIContractTests(unittest.TestCase):
         )
         self.assertEqual(result.stderr, b"")
 
+    # ADR 0001 §5: bundled themes live in <prefix>/share/rofi/themes next to
+    # <prefix>/bin/rofi, found through a symlink as Homebrew links it.
+    def test_bundled_theme_is_found_beside_the_installed_executable(self):
+        with tempfile.TemporaryDirectory() as root:
+            prefix = Path(root) / "prefix"
+            (prefix / "bin").mkdir(parents=True)
+            (prefix / "share/rofi/themes").mkdir(parents=True)
+            (prefix / "share/rofi/themes/bundled.rasi").write_text("window { width: 321px; }\n")
+            executable = prefix / "bin/rofi"
+            executable.write_bytes(ROFI.read_bytes())
+            executable.chmod(0o755)
+            link = Path(root) / "rofi"
+            link.symlink_to(executable)
+            environment = os.environ.copy()
+            environment["HOME"] = root
+            environment["XDG_CONFIG_HOME"] = str(Path(root) / "config")
+            environment["XDG_DATA_HOME"] = str(Path(root) / "data")
+            result = subprocess.run(
+                [str(link), "-dump-config", "-theme", "bundled"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=environment,
+                check=False,
+            )
+
+        self.assertEqual(result.stderr, b"")
+        self.assertEqual(result.stdout, b"window {\n    width: 321px;\n}\n")
+
     # ADR 0001 §2: -dump-config resolves the same sources as a real run, and
     # its warnings, including panel-style ones, still go to stderr.
     def test_dump_config_reports_style_warnings(self):

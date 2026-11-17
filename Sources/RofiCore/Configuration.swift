@@ -24,7 +24,14 @@ public struct RasiConfigurationEnvironment: @unchecked Sendable {
     }
 
     public static var live: RasiConfigurationEnvironment {
-        let resources = Bundle.main.resourceURL.map { [$0.appendingPathComponent("themes").path] } ?? []
+        // <prefix>/bin/rofi -> <prefix>/share/rofi/themes, as upstream installs them.
+        let resources =
+            Bundle.main.executableURL.map {
+                [
+                    $0.resolvingSymlinksInPath().deletingLastPathComponent().deletingLastPathComponent()
+                        .appendingPathComponent("share/rofi/themes").path
+                ]
+            } ?? []
         return RasiConfigurationEnvironment(
             homeDirectory: NSHomeDirectory(),
             currentDirectory: FileManager.default.currentDirectoryPath,
