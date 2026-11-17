@@ -84,7 +84,7 @@ func reportFailedModes(_ modes: [any Mode]) -> Bool {
                 list: listDirectoryOnDisk)
         },
         commandLauncher: launchWithProcess, scriptWriter: writeTemporaryScript,
-        listGenerator: { generateWithProcess($0) }, sshFiles: .disk)
+        listGenerator: { generateWithProcess($0) }, sshFiles: .disk, windowSystem: NativeWindowSystem().system)
     // run_mode_index: a script that cannot start shows an error dialog in
     // place of the view (source/rofi.c:201-216, source/modes/script.c:242-246).
     if reportFailedModes(modes) { exit(EXIT_SUCCESS) }

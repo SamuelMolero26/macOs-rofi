@@ -27,6 +27,34 @@ public struct WindowRecord: Equatable, Sendable {
     }
 }
 
+/// Why the window list could not be read, shown as the mode's message.
+public struct WindowListFailure: Error, Equatable {
+    public let message: String
+
+    public init(message: String) {
+        self.message = message
+    }
+}
+
+/// The platform's window list and actions, injected into `WindowMode`.
+public struct WindowSystem {
+    public var windows: () throws -> [WindowRecord]
+    public var raise: (WindowRecord) -> Void
+    public var close: (WindowRecord) -> Void
+
+    public init(
+        windows: @escaping () throws -> [WindowRecord], raise: @escaping (WindowRecord) -> Void,
+        close: @escaping (WindowRecord) -> Void
+    ) {
+        self.windows = windows
+        self.raise = raise
+        self.close = close
+    }
+
+    /// No windows: for callers without a platform window list.
+    public static var none: WindowSystem { WindowSystem(windows: { [] }, raise: { _ in }, close: { _ in }) }
+}
+
 /// The `window` mode (source/modes/window.c): the open windows, Enter raising
 /// the selected one.
 ///
@@ -39,10 +67,23 @@ public struct WindowRecord: Equatable, Sendable {
 /// thumbnails (ScreenCaptureKit needs macOS 14 and Screen Recording).
 public final class WindowMode: Mode {
     public let name = "window"
-    public private(set) var rows: [Row] = []
+    /// Read on first use: mode_init runs only when a mode is shown
+    /// (source/rofi.c:204).
+    public var rows: [Row] {
+        if !loaded { load() }
+        return loadedRows
+    }
+    private var loaded = false
+    private var loadedRows: [Row] = []
     /// The windows behind `rows`, after hide-active-window.
     private var shown: [WindowRecord] = []
-    private let listWindows: () -> [WindowRecord]
+    private var listed: [WindowRecord] {
+        if !loaded { load() }
+        return shown
+    }
+    /// Why the list could not be read; kept until the next read.
+    private var listFailure: String?
+    private let listWindows: () throws -> [WindowRecord]
     private let raise: (WindowRecord) -> Void
     private let close: (WindowRecord) -> Void
     private let format: String
@@ -65,7 +106,7 @@ public final class WindowMode: Mode {
     /// upstream's default (config/config.c:76). `hideActiveWindow` and
     /// `closeOnDelete` are the theme booleans (window.c:704-708, 833-838).
     public init(
-        windows: @escaping () -> [WindowRecord], raise: @escaping (WindowRecord) -> Void,
+        windows: @escaping () throws -> [WindowRecord], raise: @escaping (WindowRecord) -> Void,
         close: @escaping (WindowRecord) -> Void, format: String = "{c}   {t}", matchFields: String = "all",
         windowCommand: String = "wmctrl -i -R {window}", hideActiveWindow: Bool = false,
         closeOnDelete: Bool = true, terminal: String?, runCommand: String = "{cmd}",
@@ -85,21 +126,20 @@ public final class WindowMode: Mode {
         self.runShellCommand = runShellCommand
         self.launcher = launcher
         self.writeScript = writeScript
-        load()
     }
 
-    public var message: String? { failure }
+    public var message: String? { failure ?? listFailure }
     /// The MARKUP state bit (window.c:964).
     public var markupRows: Bool { true }
 
     public func iconPath(at row: Int) -> String? {
-        shown.indices.contains(row) ? shown[row].bundlePath : nil
+        listed.indices.contains(row) ? listed[row].bundlePath : nil
     }
 
     /// `window_match` (window.c:427-470) on the enabled raw fields.
     public func matches(_ row: Row, at index: Int, matcher: Matcher) -> Bool {
-        guard shown.indices.contains(index) else { return false }
-        let window = shown[index]
+        guard listed.indices.contains(index) else { return false }
+        let window = listed[index]
         let fields = [window.title, window.app, "", window.title, ""]
         return matcher.matches(fields: zip(fields, enabledFields).map { $1 ? $0 : "" })
     }
@@ -113,13 +153,13 @@ public final class WindowMode: Mode {
         case .customKey(let key):
             return .switchTo(key)
         case .ok:
-            guard let row = selectedRow, shown.indices.contains(row) else { return .reload }
-            if alt { return actOnWindow(shown[row]) }
-            raise(shown[row])
+            guard let row = selectedRow, listed.indices.contains(row) else { return .reload }
+            if alt { return actOnWindow(listed[row]) }
+            raise(listed[row])
             return .exit
         case .deleteEntry:
-            guard let row = selectedRow, shown.indices.contains(row) else { return .reload }
-            close(shown[row])
+            guard let row = selectedRow, listed.indices.contains(row) else { return .reload }
+            close(listed[row])
             if closeOnDelete { return .exit }
             // ponytail: upstream keeps the closed row; re-reading drops it.
             load()
@@ -153,11 +193,19 @@ public final class WindowMode: Mode {
     /// window (613-616) before hide-active-window drops the active one
     /// (689-691).
     private func load() {
-        let windows = listWindows()
+        loaded = true
+        let windows: [WindowRecord]
+        do {
+            windows = try listWindows()
+            listFailure = nil
+        } catch {
+            windows = []
+            listFailure = (error as? WindowListFailure)?.message ?? "\(error)"
+        }
         let titleWidth = windows.map(\.title.count).max() ?? 0
         let widths: [Character: Int] = ["c": windows.map(\.app.count).max() ?? 0, "t": titleWidth, "n": titleWidth]
         shown = hideActiveWindow ? windows.filter { !$0.active } : windows
-        rows = shown.map { window in
+        loadedRows = shown.map { window in
             var row = Row(parsing: displayString(window, widths: widths))
             row.active = window.active
             return row

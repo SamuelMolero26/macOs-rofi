@@ -135,9 +135,9 @@ private final class FakeMode: Mode {
             Issue.record("combi expected")
             return
         }
-        #expect(modes.map(\.name) == ["run"])
+        #expect(modes.map(\.name) == ["window", "run"])
         #expect(format == nil)
-        #expect(defaults.warnings.last == "Invalid script switcher: window\n")
+        #expect(!defaults.warnings.contains { $0.hasPrefix("Invalid script switcher") })
         #expect(try parse(["-show", "drun"]).warnings.isEmpty)
     }
 }

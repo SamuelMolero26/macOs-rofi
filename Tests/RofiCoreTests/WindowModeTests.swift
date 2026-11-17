@@ -9,6 +9,8 @@ import Testing
         WindowRecord(handle: 1, id: "42", app: "Code", title: "a & b", bundlePath: "/Applications/Code.app"),
         WindowRecord(handle: 2, id: "", app: "Brave Browser", title: "x", active: true),
     ]
+    private var listed = 0
+    private var listFailure: WindowListFailure?
     private var raised: [Int] = []
     private var closed: [Int] = []
     private var launched: [[String]] = []
@@ -19,7 +21,11 @@ import Testing
         closeOnDelete: Bool = true
     ) -> WindowMode {
         WindowMode(
-            windows: { [unowned self] in windows },
+            windows: { [unowned self] in
+                listed += 1
+                if let listFailure { throw listFailure }
+                return windows
+            },
             raise: { [unowned self] in raised.append($0.handle) },
             close: { [unowned self] in closed.append($0.handle) },
             format: format, matchFields: matchFields, hideActiveWindow: hideActiveWindow,
@@ -91,6 +97,19 @@ import Testing
         #expect(mode.message == "Failed to execute: 'nope'\nError: 'missing'")
         #expect(act(mode, .ok, alt: true, row: 0) == .reload)
         #expect(mode.message == "Failed to execute action for window: '42'\nError: 'missing'")
+    }
+
+    // mode_init runs only when a mode is shown (source/rofi.c:204), so the
+    // list is read on first use; a list that cannot be read is the message.
+    @Test func listIsReadOnFirstUseAndItsFailureShown_rofi_c_204() {
+        let mode = make()
+        #expect(listed == 0)
+        #expect(mode.rows.count == 2)
+        #expect(listed == 1)
+        listFailure = WindowListFailure(message: "no access")
+        let denied = make()
+        #expect(denied.rows.isEmpty)
+        #expect(denied.message == "no access")
     }
 
     // hide-active-window (window.c:704-708, 689-691) drops the active window

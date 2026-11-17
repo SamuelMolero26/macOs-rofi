@@ -230,7 +230,8 @@ public func makeModes(
     scriptWriter: @escaping ScriptWriter = unavailableScriptWriter,
     listGenerator: @escaping ListGenerator = unavailableListGenerator,
     fileSystem: any FileBrowserFileSystem = DiskFileSystem(),
-    sshFiles: SshFiles = .none
+    sshFiles: SshFiles = .none,
+    windowSystem: WindowSystem = .none
 ) -> [any Mode] {
     let home = ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory()
     let applicationRecords =
@@ -250,6 +251,11 @@ public func makeModes(
     func make(_ spec: ModeSpec) -> any Mode {
         switch spec {
         case .script(let name, let path): ScriptMode(name: name, command: path, modeNames: specs.map(\.name))
+        case .window(let format, let matchFields, let command, let terminal, let runCommand, let runShellCommand):
+            WindowMode(
+                windows: windowSystem.windows, raise: windowSystem.raise, close: windowSystem.close, format: format,
+                matchFields: matchFields, windowCommand: command, terminal: terminal, runCommand: runCommand,
+                runShellCommand: runShellCommand, launcher: commandLauncher, writeScript: scriptWriter)
         case .run(let historyPath, let terminal, let runCommand, let runShellCommand, let listCommand):
             RunMode(
                 discover: executables, history: historyPath.map { History(url: URL(fileURLWithPath: $0)) },
