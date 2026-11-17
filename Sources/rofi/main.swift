@@ -72,17 +72,21 @@ func reportFailedModes(_ modes: [any Mode]) -> Bool {
         report(options.unsureWhatToShow)
         exit(EXIT_SUCCESS)
     }
+    // Discovery for the listed modes runs in the background while AppKit
+    // connects. ProcessInfo is not thread-safe, so the environment is read here.
+    let specs = withCombined(options.modes)
+    let path = ProcessInfo.processInfo.environment["PATH"]
+    let home = ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory()
+    // get_apps reads $PATH when the mode is built (source/modes/run.c:251, 273).
+    let scanPath: @Sendable () -> [String]? = { discoverExecutables(path: path, home: home, list: listDirectoryOnDisk) }
+    let applications =
+        specs.contains { if case .drun = $0 { true } else { false } }
+        ? prefetched { NativeApplicationCatalog().applications() } : { [] }
+    let executables = specs.contains { if case .run = $0 { true } else { false } } ? prefetched(scanPath) : scanPath
+    prepareApplication()
     let applicationCatalog = NativeApplicationCatalog()
     let modes = makeModes(
-        options.modes, applications: applicationCatalog.applications,
-        launcher: applicationCatalog.launch,
-        // get_apps reads $PATH when the mode is built (source/modes/run.c:251, 273).
-        executables: {
-            discoverExecutables(
-                path: ProcessInfo.processInfo.environment["PATH"],
-                home: ProcessInfo.processInfo.environment["HOME"] ?? NSHomeDirectory(),
-                list: listDirectoryOnDisk)
-        },
+        options.modes, applications: applications, launcher: applicationCatalog.launch, executables: executables,
         commandLauncher: launchWithProcess, scriptWriter: writeTemporaryScript,
         listGenerator: { generateWithProcess($0) }, sshFiles: .disk, windowSystem: NativeWindowSystem().system)
     // run_mode_index: a script that cannot start shows an error dialog in
