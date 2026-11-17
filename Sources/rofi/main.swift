@@ -33,6 +33,11 @@ func finish(_ completion: DmenuCompletion) -> Never {
     exit(completion.outcome.exitCode)
 }
 
+func finishAction(_ output: String) -> Never {
+    FileHandle.standardOutput.write(Data(output.utf8))
+    exit(EXIT_SUCCESS)
+}
+
 func rawCommandLineArguments() -> [[UInt8]] {
     (0..<Int(CommandLine.argc)).map { index in
         guard let pointer = CommandLine.unsafeArgv[index] else { return [] }
@@ -105,6 +110,44 @@ func reportFailedModes(_ modes: [any Mode]) -> Bool {
 }
 
 let args = Arguments(rawArgv: rawCommandLineArguments())
+
+if ["-help", "-h", "--help"].contains(where: args.has) {
+    let help = """
+        Usage:
+          rofi [options]
+          rofi -show <mode> [options]
+          rofi -dmenu [options]
+
+        General options:
+          -help, -h, --help  Show this help and exit.
+          -version, -v       Show version and exit.
+          -e <message>       Show a native error dialog and exit.
+          -markup            Render supported Pango markup in -e.
+          -show <mode>       Show an enabled mode.
+          -modes <list>      Set enabled modes.
+          -dmenu             Read menu entries from standard input.
+          -dump-config       Print resolved configuration and exit.
+
+        Configuration options:
+          -config <path>     Load configuration from a file.
+          -no-config         Skip configuration loading.
+          -theme <theme>     Load a theme by name or path.
+          -theme-str <rasi>  Apply an inline Rasi theme fragment.
+
+        Built-in modes:
+          run, ssh, drun, combi, keys, filebrowser
+        """
+    finishAction(help + "\n")
+}
+
+if ["-version", "-v"].contains(where: args.has) {
+    finishAction("Version: development\n")
+}
+
+if let message = args.string("-e") {
+    runErrorDialog(message, markup: args.has("-markup"))
+    exit(EXIT_SUCCESS)
+}
 
 let configuration: RasiConfiguration
 do {
