@@ -21,7 +21,7 @@ private final class FakeMode: Mode {
         self.message = message
     }
 
-    func result(_ action: MenuAction, input: inout String?, selectedRow: Int?) -> ModeResult {
+    func result(_ action: MenuAction, alt: Bool, input: inout String?, selectedRow: Int?) -> ModeResult {
         calls.append((action, input, selectedRow))
         if case .some(let value) = rewrite { input = value }
         onResult()
@@ -39,11 +39,6 @@ private final class AltMode: Mode {
     var rows: [Row] = ["one", "two"].map { Row(parsing: $0) }
     private(set) var calls: [(action: MenuAction, alt: Bool, selectedRow: Int?)] = []
 
-    func result(_ action: MenuAction, input: inout String?, selectedRow: Int?) -> ModeResult {
-        calls.append((action, false, selectedRow))
-        return .reload
-    }
-
     func result(_ action: MenuAction, alt: Bool, input: inout String?, selectedRow: Int?) -> ModeResult {
         calls.append((action, alt, selectedRow))
         return .reload
@@ -59,7 +54,7 @@ private final class CompleteMode: Mode {
     var rewrite: String?? = .none
     private(set) var calls: [(input: String?, selectedRow: Int?)] = []
 
-    func result(_ action: MenuAction, input: inout String?, selectedRow: Int?) -> ModeResult { .reload }
+    func result(_ action: MenuAction, alt: Bool, input: inout String?, selectedRow: Int?) -> ModeResult { .reload }
 
     func complete(input: inout String?, selectedRow: Int?) -> ModeResult? {
         calls.append((input, selectedRow))

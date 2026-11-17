@@ -9,10 +9,13 @@ import os
 @MainActor public func runDmenuPanel(
     session: DmenuSession,
     style: PanelStyle = PanelStyle(),
+    placement: PanelPlacement = PanelPlacement(),
     streaming input: (open: @Sendable () -> Int32, separator: UInt8)?
 ) -> DmenuCompletion {
     let model = DmenuPanelModel(session: session)
-    runPanel(model: model, style: model.style(base: style), keymap: session.pipeline.keymap, streaming: input)
+    runPanel(
+        model: model, style: model.style(base: style), keymap: session.pipeline.keymap, placement: placement,
+        streaming: input)
     guard let completion = model.completion else {
         preconditionFailure("dmenu panel stopped without a completion")
     }
@@ -24,13 +27,16 @@ import os
     model: any PanelModel,
     style: PanelStyle,
     keymap: Keymap,
+    placement: PanelPlacement,
     streaming input: (open: @Sendable () -> Int32, separator: UInt8)?
 ) {
     let application = NSApplication.shared
     // Regular policy reliably registers this unbundled CLI for activation.
     application.setActivationPolicy(.regular)
 
-    let controller = PanelController(model: model, style: style, keymap: keymap, input: input)
+    // Built before `run` activates rofi, while the launching app is still
+    // frontmost (ADR 0002 §3).
+    let controller = PanelController(model: model, style: style, keymap: keymap, placement: placement, input: input)
     let applicationDelegate = PanelApplicationDelegate(controller: controller)
     application.delegate = applicationDelegate
     withExtendedLifetime(applicationDelegate) {
@@ -86,7 +92,10 @@ import os
 
     private let model: any PanelModel
     private let style: PanelStyle
-    /// The theme's width, padding and border in points for the main screen.
+    private let placement: PanelPlacement
+    /// Where `-monitor` puts the panel, or nil without screens.
+    private let workArea: WorkArea?
+    /// The theme's width, padding and border in points for the work area.
     private let metrics: PanelMetrics
     /// Content edges: border plus padding.
     private let insets: NSEdgeInsets
@@ -121,19 +130,33 @@ import os
     )
     private var suppressTableSelectionChanges = false
     private var finished = false
+    /// The last keymap action was kb-row-tab (source/view.c:640).
+    private var lastActionWasRowTab = false
     /// The keymap's local key-down monitor while the panel is open.
     private var keyMonitor: Any?
+    /// click-to-exit's global mouse-down monitor while the panel is open.
+    private var clickMonitor: Any?
     /// Finder icons by path, fetched as rows are first shown.
     /// ponytail: never evicted; one image per path shown in this run.
     private var icons: [String: NSImage] = [:]
 
     init(
-        model: any PanelModel, style: PanelStyle, keymap: Keymap,
+        model: any PanelModel, style: PanelStyle, keymap: Keymap, placement: PanelPlacement,
         input: (open: @Sendable () -> Int32, separator: UInt8)?
     ) {
         self.model = model
         self.style = style
-        metrics = PanelMetrics(style: style, visibleSize: NSScreen.main?.visibleFrame.size ?? .zero)
+        self.placement = placement
+        let screens = NSScreen.screens.map {
+            Screen(name: $0.localizedName, frame: $0.frame, visibleFrame: $0.visibleFrame)
+        }
+        let resolved = placement.workArea(
+            screens: screens, mouse: NSEvent.mouseLocation, frontWindow: frontmostWindowBounds)
+        if let warning = resolved?.warning {
+            FileHandle.standardError.write(Data("rofi: warning: \(warning)\n".utf8))
+        }
+        workArea = resolved?.area
+        metrics = PanelMetrics(style: style, visibleSize: workArea?.frame.size ?? .zero)
         insets = metrics.contentInsets
         self.keymap = keymap
         self.input = input
@@ -156,20 +179,21 @@ import os
         configureLoadingLabel()
         configureSwitcher()
         configureLayout()
-        reloadMatches()
+        syncTable(reload: true)
     }
 
     func present() {
-        panel.center()
-        if let visibleFrame = panel.screen?.visibleFrame {
+        if let workArea {
             // Upstream's `-b` is location 6, bottom center, which resolves to
-            // `south` (source/modes/dmenu.c:601-603, source/xcb/view.c:275-278, 309-311, 327-330).
-            var origin =
-                panelOrigin(location: style.location, size: panel.frame.size, visibleFrame: visibleFrame)
-                ?? panel.frame.origin
+            // `south` (source/modes/dmenu.c:601-603); `-3` forces north west.
+            var origin = panelOrigin(
+                location: workArea.location ?? style.location, size: panel.frame.size, area: workArea.frame,
+                xOffset: placement.xOffset, yOffset: placement.yOffset)
             // A panel as tall as the screen must not slide under the menu bar.
-            origin.y = min(origin.y, visibleFrame.maxY - panel.frame.height)
+            origin.y = min(origin.y, workArea.frame.maxY - panel.frame.height)
             panel.setFrameOrigin(origin)
+        } else {
+            panel.center()
         }
         panel.orderFrontRegardless()
         installKeyMonitor()
@@ -183,10 +207,27 @@ import os
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [unowned self] event in
             let consumed = MainActor.assumeIsolated {
                 guard let action = keymapAction(for: event, in: panel, keymap: keymap) else { return false }
-                perform { $0.perform(action) }
+                let repeatedTab = lastActionWasRowTab
+                lastActionWasRowTab = action == .rowTab
+                if action.isNavigation {
+                    perform { $0.navigate(action, pageSize: visibleRowCount, repeatedTab: repeatedTab) }
+                    if !finished { syncTable() }
+                } else {
+                    perform { $0.perform(action) }
+                }
                 return true
             }
             return consumed ? nil : event
+        }
+        // click-to-exit: with no pointer grab, a click that reaches another
+        // app is the click outside the window (source/xcb/view.c:864-871).
+        // Global mouse monitors need no permission; focus theft alone does
+        // not cancel (ADR 0002 §5).
+        guard placement.clickToExit else { return }
+        clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [
+            .leftMouseDown, .rightMouseDown, .otherMouseDown,
+        ]) { [unowned self] _ in
+            MainActor.assumeIsolated { perform { $0.cancel() } }
         }
     }
 
@@ -316,6 +357,9 @@ import os
         tableView.setAccessibilityLabel("\(style.accessibilityName) results")
         tableView.dataSource = self
         tableView.delegate = self
+        // me-accept-entry is a primary double click (source/keyb.c:379-383).
+        tableView.target = self
+        tableView.doubleAction = #selector(rowDoubleClicked(_:))
 
         scrollView.documentView = tableView
         scrollView.hasVerticalScroller = true
@@ -404,7 +448,7 @@ import os
     /// `fixed_num_lines` (config/config.c:101), however few rows match.
     private func fitPanel(toRowsHeight rowsHeight: CGFloat) {
         guard let contentView = panel.contentView else { return }
-        let maximumHeight = panel.screen?.visibleFrame.height ?? Layout.panelHeight
+        let maximumHeight = workArea?.frame.height ?? Layout.panelHeight
         // The cap also keeps a huge `-l` within Auto Layout's limits.
         let rowsConstraint = scrollView.heightAnchor.constraint(equalToConstant: min(rowsHeight, maximumHeight))
         rowsConstraint.priority = .dragThatCannotResizeWindow
@@ -440,7 +484,7 @@ import os
         model.appendRows(pending.rows)
         tableView.insertRows(at: IndexSet(firstNewRow..<model.matches.count), withAnimation: [])
         if model.selectedVisibleIndex != selection {
-            syncSelection()
+            syncTable()
         }
         // The end of input clears the one overlay, even a multi-select count
         // (source/modes/dmenu.c:237-240).
@@ -457,28 +501,14 @@ import os
         searchFieldBesideLoading.isActive = text != nil
     }
 
-    private func reloadMatches() {
-        synchronizeTableSelection(reloadData: true)
-    }
-
-    private func syncSelection() {
-        synchronizeTableSelection(reloadData: false)
-    }
-
-    private func synchronizeTableSelection(reloadData: Bool) {
+    /// Shows the model's selection in the table, after reloading its rows
+    /// when `reload`, without echoing the change back to the model.
+    private func syncTable(reload: Bool = false) {
         let wasSuppressed = suppressTableSelectionChanges
         suppressTableSelectionChanges = true
         defer { suppressTableSelectionChanges = wasSuppressed }
-        if reloadData {
-            tableView.reloadData()
-        }
-        restoreCoreSelection()
-    }
-
-    private func restoreCoreSelection() {
-        guard let index = model.selectedVisibleIndex,
-            tableView.numberOfRows > index
-        else {
+        if reload { tableView.reloadData() }
+        guard let index = model.selectedVisibleIndex, tableView.numberOfRows > index else {
             tableView.deselectAll(nil)
             return
         }
@@ -495,12 +525,13 @@ import os
             return
         case .close:
             finished = true
-            keyMonitor.map(NSEvent.removeMonitor)
+            for monitor in [keyMonitor, clickMonitor].compactMap({ $0 }) { NSEvent.removeMonitor(monitor) }
             keyMonitor = nil
+            clickMonitor = nil
             panel.orderOut(nil)
             NSApplication.shared.stop(nil)
         case .reload:
-            reloadMatches()
+            syncTable(reload: true)
             // A refused toggle leaves the count unchanged and must not clear
             // "Loading.. " mid-stream; upstream returns before touching the
             // overlay (source/modes/dmenu.c:908-911).
@@ -528,6 +559,33 @@ import os
         let index = sender.selectedSegment
         perform { $0.switchTo(index) }
     }
+
+    @objc private func rowDoubleClicked(_ sender: NSTableView) {
+        let row = sender.clickedRow
+        guard row >= 0 else { return }
+        model.selectVisibleIndex(row)
+        perform { $0.accept() }
+    }
+
+    /// Whole rows in view: kb-page-prev/next's step.
+    private var visibleRowCount: Int {
+        Int(scrollView.contentView.bounds.height / (tableView.rowHeight + tableView.intercellSpacing.height))
+    }
+}
+
+/// The frontmost app's topmost normal window in CGWindowList's top-left
+/// coordinates. Bounds, owner and layer need no permission; titles are never
+/// read (ADR 0002 §4).
+@MainActor func frontmostWindowBounds() -> CGRect? {
+    guard let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier,
+        let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+            as? [[String: Any]],
+        let window = windows.first(where: {
+            $0[kCGWindowOwnerPID as String] as? pid_t == pid && $0[kCGWindowLayer as String] as? Int == 0
+        }),
+        let bounds = window[kCGWindowBounds as String] as? NSDictionary
+    else { return nil }
+    return CGRect(dictionaryRepresentation: bounds)
 }
 
 extension PanelController: NSTextFieldDelegate {
@@ -551,10 +609,10 @@ extension PanelController: NSTextFieldDelegate {
             perform { $0.cancel() }
         case #selector(NSResponder.moveUp(_:)):
             model.moveSelection(by: -1)
-            syncSelection()
+            syncTable()
         case #selector(NSResponder.moveDown(_:)):
             model.moveSelection(by: 1)
-            syncSelection()
+            syncTable()
         // kb-mode-next is Control+Tab and kb-mode-previous Control+Shift+Tab
         // (source/keyb.c:135-142; Shift+Right/Left stay text selection). The
         // field editor gets them as these key-view selectors: observed with

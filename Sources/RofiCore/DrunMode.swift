@@ -73,13 +73,11 @@ public final class DrunMode: Mode {
 
     /// `_get_icon` (drun.c:1557-1580): the catalog supplies the icon identity.
     public func iconPath(at row: Int) -> String? {
-        applications.indices.contains(row) ? applications[row].record.iconPath : nil
+        applications.indices.contains(row) ? applications[row].record.bundlePath : nil
     }
 
     /// `drun_mode_result` (drun.c:1360-1449).
-    public func result(
-        _ action: MenuAction, input: inout String?, selectedRow: Int?
-    ) -> ModeResult {
+    public func result(_ action: MenuAction, alt: Bool, input: inout String?, selectedRow: Int?) -> ModeResult {
         failure = nil
         switch action {
         case .cancel:

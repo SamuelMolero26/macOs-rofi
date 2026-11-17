@@ -5,12 +5,13 @@ import RofiCore
 /// source/view.c:1667-1668); `icons` the icon column (`-show-icons`).
 /// `style` carries the resolved theme.
 @MainActor public func runModePanel(
-    switcher: ModeSwitcher, sidebar: Bool, icons: Bool, keymap: Keymap, style: PanelStyle = PanelStyle()
+    switcher: ModeSwitcher, sidebar: Bool, icons: Bool, keymap: Keymap, style: PanelStyle = PanelStyle(),
+    placement: PanelPlacement = PanelPlacement()
 ) {
     let model = ModePanelModel(switcher: switcher)
     var style = model.style(base: style, sidebar: sidebar)
     style.showIcons = icons
-    runPanel(model: model, style: style, keymap: keymap, streaming: nil)
+    runPanel(model: model, style: style, keymap: keymap, placement: placement, streaming: nil)
 }
 
 /// A `-show` mode switcher (source/rofi.c:201-291), which ends when a mode

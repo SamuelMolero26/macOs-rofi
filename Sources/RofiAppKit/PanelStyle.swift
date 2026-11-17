@@ -18,7 +18,7 @@ public struct PanelStyle {
     /// An icon column before the text (`-show-icons`, source/xrmoptions.c:145).
     var showIcons = false
 
-    /// Placement in the visible frame, or nil for AppKit's centering.
+    /// Placement in the work area, or nil for its center.
     var location: RasiLocation?
     var backgroundColor: NSColor?
     /// Prompt, entry, message and normal row foreground.
@@ -144,29 +144,6 @@ func lineHeight(of font: NSFont) -> CGFloat {
     (font.ascender - font.descender + font.leading).rounded(.up)
 }
 
-/// The panel origin for `location` in `visibleFrame`, or nil to let AppKit
-/// center it (the default, and Rasi's `center`).
-func panelOrigin(location: RasiLocation?, size: NSSize, visibleFrame: NSRect) -> NSPoint? {
-    guard let location, location != .center else { return nil }
-    let left = visibleFrame.minX
-    let middle = visibleFrame.midX - size.width / 2
-    let right = visibleFrame.maxX - size.width
-    let top = visibleFrame.maxY - size.height
-    let center = visibleFrame.midY - size.height / 2
-    let bottom = visibleFrame.minY
-    switch location {
-    case .center: return nil
-    case .north: return NSPoint(x: middle, y: top)
-    case .northEast: return NSPoint(x: right, y: top)
-    case .east: return NSPoint(x: right, y: center)
-    case .southEast: return NSPoint(x: right, y: bottom)
-    case .south: return NSPoint(x: middle, y: bottom)
-    case .southWest: return NSPoint(x: left, y: bottom)
-    case .west: return NSPoint(x: left, y: center)
-    case .northWest: return NSPoint(x: left, y: top)
-    }
-}
-
 /// The selector/property table of ADR 0001 §3.
 private struct ThemeMapping {
     let resolution: RasiResolution
@@ -239,8 +216,7 @@ private struct ThemeMapping {
         for declaration in resolution.declarations {
             guard ["entry", "prompt", "message", "button", "mode-switcher"].contains(declaration.selector.name)
             else { continue }
-            let label = ([declaration.selector.name] + declaration.selector.states).joined(separator: " ")
-            let key = "\(label) \(declaration.property.rawValue)"
+            let key = "\(declaration.selector.label) \(declaration.property.rawValue)"
             guard seen.insert(key).inserted else { continue }
             warn(
                 declaration, .unsupportedProperty,
@@ -251,7 +227,7 @@ private struct ThemeMapping {
     private mutating func warn(_ declaration: RasiResolvedDeclaration, _ code: RasiDiagnosticCode, _ message: String) {
         warnings.append(
             RasiDiagnostic(
-                severity: .warning, code: code, message: message,
+                code: code, message: message,
                 source: declaration.source, line: declaration.line, column: declaration.column))
     }
 

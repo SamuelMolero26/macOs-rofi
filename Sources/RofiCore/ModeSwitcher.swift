@@ -139,6 +139,8 @@ public struct ModeSwitcher {
             let mode = current
             guard let result = mode.complete(input: &input, selectedRow: highlightedSourceIndex) else { return isOpen }
             return apply(result, input: input, requestedRow: mode.selectedRowAfterResult)
+        case .rowTab, .pagePrev, .pageNext, .rowFirst, .rowLast, .selectRow:
+            return isOpen
         }
     }
 

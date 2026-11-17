@@ -93,7 +93,7 @@ func reportFailedModes(_ modes: [any Mode]) -> Bool {
         sort: options.sort, sortingMethod: options.sortingMethod, cycle: options.cycle)
     runModePanel(
         switcher: switcher, sidebar: options.sidebarMode, icons: options.showIcons, keymap: options.keymap,
-        style: style)
+        style: style, placement: PanelPlacement(arguments: args))
     // A later run that cannot start ends its mode with no rows; its dialog
     // would show after the view closes.
     _ = reportFailedModes(modes)
@@ -161,6 +161,6 @@ case .session(let session):
     // The reader dies with the process when `finish` exits.
     finish(
         runDmenuPanel(
-            session: session, style: style,
+            session: session, style: style, placement: PanelPlacement(arguments: args),
             streaming: pipeline.isAsync ? ({ [path] in openInput(path) }, pipeline.separator) : nil))
 }

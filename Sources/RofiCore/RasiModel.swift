@@ -13,7 +13,6 @@ public struct RasiSource: Equatable, Sendable {
         guard let text = String(bytes: bytes, encoding: .utf8) else {
             throw RasiFailure(
                 diagnostic: RasiDiagnostic(
-                    severity: .error,
                     code: .invalidUTF8,
                     message: "source is not valid UTF-8",
                     source: identity,
@@ -24,11 +23,6 @@ public struct RasiSource: Equatable, Sendable {
         }
         self.init(identity: identity, text: text)
     }
-}
-
-public enum RasiDiagnosticSeverity: Sendable {
-    case warning
-    case error
 }
 
 public enum RasiDiagnosticCode: String, Equatable, Sendable {
@@ -51,7 +45,6 @@ public enum RasiDiagnosticCode: String, Equatable, Sendable {
 }
 
 public struct RasiDiagnostic: Equatable, Sendable {
-    public let severity: RasiDiagnosticSeverity
     public let code: RasiDiagnosticCode
     public let message: String
     public let source: String
@@ -59,14 +52,12 @@ public struct RasiDiagnostic: Equatable, Sendable {
     public let column: Int
 
     public init(
-        severity: RasiDiagnosticSeverity,
         code: RasiDiagnosticCode,
         message: String,
         source: String,
         line: Int,
         column: Int
     ) {
-        self.severity = severity
         self.code = code
         self.message = message
         self.source = source
@@ -117,15 +108,10 @@ public struct RasiSelector: Hashable, Sendable {
         RasiSelector(name: "element", states: states)
     }
 
-    private static func normalize(_ value: String) -> String {
-        String(
-            value.unicodeScalars.map { scalar in
-                if scalar.value >= 65 && scalar.value <= 90 {
-                    return Character(UnicodeScalar(scalar.value + 32)!)
-                }
-                return Character(scalar)
-            })
-    }
+    /// The name and its states, as written in a dump or a warning.
+    public var label: String { ([name] + states).joined(separator: " ") }
+
+    private static func normalize(_ value: String) -> String { value.lowercased() }
 }
 
 public enum RasiProperty: String, CaseIterable, Sendable {
@@ -242,16 +228,10 @@ public struct RasiResolvedDeclaration: Equatable, Sendable {
 public struct RasiResolution: Equatable, Sendable {
     public let declarations: [RasiResolvedDeclaration]
     public let warnings: [RasiDiagnostic]
-    public let loadedSources: [String]
 
-    public init(
-        declarations: [RasiResolvedDeclaration],
-        warnings: [RasiDiagnostic],
-        loadedSources: [String]
-    ) {
+    public init(declarations: [RasiResolvedDeclaration], warnings: [RasiDiagnostic]) {
         self.declarations = declarations
         self.warnings = warnings
-        self.loadedSources = loadedSources
     }
 
     public func value(selector: RasiSelector, property: RasiProperty) -> RasiResolvedValue? {

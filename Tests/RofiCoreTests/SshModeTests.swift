@@ -244,9 +244,9 @@ import Testing
     @Test func matchesTheHostOrOneAlias_ssh_c_698() {
         let mode = make()
         let row = mode.rows[0]
-        #expect(mode.matches(row, matcher: Matcher(query: "gam", options: MatchOptions())))
-        #expect(!mode.matches(row, matcher: Matcher(query: "alpha beta", options: MatchOptions())))
-        #expect(!mode.matches(row, matcher: Matcher(query: "(", options: MatchOptions())))
+        #expect(mode.matches(row, at: 0, matcher: Matcher(query: "gam", options: MatchOptions())))
+        #expect(!mode.matches(row, at: 0, matcher: Matcher(query: "alpha beta", options: MatchOptions())))
+        #expect(!mode.matches(row, at: 0, matcher: Matcher(query: "(", options: MatchOptions())))
     }
 
     // ssh.c:98-120, config/config.c:68: a set terminal runs the template

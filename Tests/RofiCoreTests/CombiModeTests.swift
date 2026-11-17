@@ -15,10 +15,6 @@ private final class FakeMode: Mode {
         self.rows = rows.map { Row(parsing: $0) }
     }
 
-    func result(_ action: MenuAction, input: inout String?, selectedRow: Int?) -> ModeResult {
-        result(action, alt: false, input: &input, selectedRow: selectedRow)
-    }
-
     func result(_ action: MenuAction, alt: Bool, input: inout String?, selectedRow: Int?) -> ModeResult {
         calls.append((action, alt, input, selectedRow))
         input = "rewritten"

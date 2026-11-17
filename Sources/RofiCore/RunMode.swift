@@ -166,8 +166,8 @@ public final class RunMode: Mode {
     }
 
     /// `run_token_match` (run.c:548-554).
-    public func matches(_ row: Row, matcher: Matcher) -> Bool {
-        completer?.matches(row, matcher: matcher) ?? matcher.matches(row.text)
+    public func matches(_ row: Row, at index: Int, matcher: Matcher) -> Bool {
+        completer?.matches(row, at: index, matcher: matcher) ?? matcher.matches(row.text)
     }
 
     /// `_get_completion` is NULL (run.c:613), so the display value is scored,
@@ -249,19 +249,10 @@ public final class RunMode: Mode {
         }
     }
 
-    /// `run_mode_result` (run.c:451-540) for the actions without a terminal.
-    public func result(_ action: MenuAction, input: inout String?, selectedRow: Int?) -> ModeResult {
-        result(action, runInTerminal: false, input: &input, selectedRow: selectedRow)
-    }
-
-    /// `run_in_term` is MENU_CUSTOM_ACTION (run.c:456), which the switcher
-    /// passes as `alt` for Shift+Return.
-    public func result(_ action: MenuAction, alt: Bool, input: inout String?, selectedRow: Int?) -> ModeResult {
-        result(action, runInTerminal: alt, input: &input, selectedRow: selectedRow)
-    }
-
+    /// `run_mode_result` (run.c:451-540). `run_in_term` is MENU_CUSTOM_ACTION
+    /// (run.c:456), which the switcher passes as `alt` for Shift+Return.
     public func result(
-        _ action: MenuAction, runInTerminal: Bool, input: inout String?, selectedRow: Int?
+        _ action: MenuAction, alt runInTerminal: Bool, input: inout String?, selectedRow: Int?
     ) -> ModeResult {
         failure = nil
         if let completer {

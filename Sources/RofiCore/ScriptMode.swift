@@ -51,7 +51,7 @@ public final class ScriptMode: Mode {
     }
 
     /// `script_token_match` (script.c:515-554), as `Row.matches` describes.
-    public func matches(_ row: Row, matcher: Matcher) -> Bool {
+    public func matches(_ row: Row, at index: Int, matcher: Matcher) -> Bool {
         row.matches(matcher, markup: markupRows)
     }
 
@@ -61,7 +61,7 @@ public final class ScriptMode: Mode {
     }
 
     /// `script_mode_result` (script.c:370-454).
-    public func result(_ action: MenuAction, input: inout String?, selectedRow: Int?) -> ModeResult {
+    public func result(_ action: MenuAction, alt: Bool, input: inout String?, selectedRow: Int?) -> ModeResult {
         selectedRowAfterResult = nil
         // script.c:378-379: the output acted on decides these two.
         let (keepSelection, keepFilter) = (self.keepSelection, self.keepFilter)

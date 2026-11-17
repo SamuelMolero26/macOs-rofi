@@ -81,8 +81,7 @@ public final class NativeApplicationCatalog {
                     identifier: metadata.identifier,
                     localizedDisplayName: metadata.localizedDisplayName,
                     bundleName: metadata.bundleName,
-                    bundlePath: applicationURL.path,
-                    iconPath: applicationURL.path))
+                    bundlePath: applicationURL.path))
         }
         return applications
     }
@@ -91,7 +90,7 @@ public final class NativeApplicationCatalog {
     public func launch(
         _ application: ApplicationRecord
     ) -> Result<Void, ApplicationLaunchFailure> {
-        let url = resolvedURL(for: application)
+        let url = URL(fileURLWithPath: application.bundlePath)
         guard workspace.open(url) else {
             return .failure(
                 ApplicationLaunchFailure(
@@ -99,11 +98,6 @@ public final class NativeApplicationCatalog {
                     reason: "NSWorkspace could not open the application"))
         }
         return .success(())
-    }
-
-    private func resolvedURL(for application: ApplicationRecord) -> URL {
-        let workspaceURL = workspace.applicationURL(forBundleIdentifier: application.identifier)
-        return canonicalize(workspaceURL ?? URL(fileURLWithPath: application.bundlePath))
     }
 
     private static func applicationRoots(homeDirectory: URL) -> [URL] {

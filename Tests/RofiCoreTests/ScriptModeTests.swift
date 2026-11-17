@@ -298,7 +298,7 @@ private let reportRun = """
         let path = fixtures.script("s", #"printf 'firefox\000meta\037browser web\nnotes\nhelp\000permanent\037true\n'"#)
         let mode = ScriptMode(name: "s", command: path)
         let matcher = Matcher(query: "fox web", options: MatchOptions())
-        #expect(mode.rows.map { mode.matches($0, matcher: matcher) } == [true, false, true])
+        #expect(mode.rows.enumerated().map { mode.matches($1, at: $0, matcher: matcher) } == [true, false, true])
     }
 
     // script.c:167-170, 350-358, 495-504: urgent and active headers add row
@@ -327,9 +327,9 @@ private let reportRun = """
         let foo = Matcher(query: "foo", options: MatchOptions())
         let tag = Matcher(query: "b", options: MatchOptions())
         let bad = Matcher(query: "bad", options: MatchOptions())
-        #expect(mode.rows.map { mode.matches($0, matcher: foo) } == [true, false, false])
-        #expect(mode.rows.map { mode.matches($0, matcher: tag) } == [false, false, false])
-        #expect(mode.rows.map { mode.matches($0, matcher: bad) } == [false, false, false])
+        #expect(mode.rows.enumerated().map { mode.matches($1, at: $0, matcher: foo) } == [true, false, false])
+        #expect(mode.rows.enumerated().map { mode.matches($1, at: $0, matcher: tag) } == [false, false, false])
+        #expect(mode.rows.enumerated().map { mode.matches($1, at: $0, matcher: bad) } == [false, false, false])
 
         #expect(perform(mode, .ok, row: 1).result == .reload)
         #expect(mode.markupRows)
@@ -456,8 +456,7 @@ private let reportRun = """
     @Test func drunAssemblyReceivesApplicationRecordsAndPropagatesItsLauncherFailure() throws {
         let application = ApplicationRecord(
             identifier: "com.example.discovered", localizedDisplayName: "Discovered",
-            bundleName: nil, bundlePath: "/Applications/Discovered.app",
-            iconPath: "/icons/Discovered.icns")
+            bundleName: nil, bundlePath: "/Applications/Discovered.app")
         let failure = ApplicationLaunchFailure(
             command: "open application '/Applications/Discovered.app'", reason: "refused")
         var loadCount = 0
@@ -477,7 +476,7 @@ private let reportRun = """
 
         #expect(loadCount == 1)
         #expect(mode.rows.map(\.text) == ["Discovered"])
-        #expect(mode.iconPath(at: 0) == "/icons/Discovered.icns")
+        #expect(mode.iconPath(at: 0) == "/Applications/Discovered.app")
         var input: String?
         #expect(mode.result(.ok, input: &input, selectedRow: 0) == .reload)
         #expect(launched == [application])
@@ -588,7 +587,7 @@ private let reportRun = """
         let run = try #require(modes[0] as? RunMode)
         #expect(run.rows.map(\.text) == ["cat", "ls"])
         var input: String? = nil
-        _ = run.result(.ok, runInTerminal: true, input: &input, selectedRow: 1)
+        _ = run.result(.ok, alt: true, input: &input, selectedRow: 1)
         #expect(launched == [["kitty", "-e", "ls"]])
     }
 

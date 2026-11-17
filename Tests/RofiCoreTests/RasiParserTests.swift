@@ -154,7 +154,6 @@ import Testing
         #expect(
             result.color(selector: .window, property: .backgroundColor)
                 == .init(red: 1.0 / 255, green: 2.0 / 255, blue: 3.0 / 255))
-        #expect(result.loadedSources == ["/themes/root.rasi", "/themes/replacement.rasi"])
     }
 
     @Test func importedTypedFailuresPreserveTheirDiagnostic() throws {

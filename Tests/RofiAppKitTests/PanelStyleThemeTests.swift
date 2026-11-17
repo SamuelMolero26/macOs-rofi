@@ -28,8 +28,6 @@ import Testing
         #expect(edges(metrics.padding) == [12, 12, 12, 12])
         #expect(edges(metrics.border) == [0, 0, 0, 0])
         #expect(edges(metrics.contentInsets) == [12, 12, 12, 12])
-        #expect(
-            panelOrigin(location: style.location, size: NSSize(width: 640, height: 420), visibleFrame: .zero) == nil)
     }
 
     @Test func windowColorsOverrideGlobalColorsAsCalibratedSRGB() throws {
@@ -114,7 +112,6 @@ import Testing
         #expect(warnings.map(\.code) == [.unsupportedValue])
         #expect(warnings.first?.source == "theme.rasi")
         #expect(warnings.first?.line == 2)
-        #expect(warnings.first?.severity == .warning)
     }
 
     @Test func dimensionsConvertToPointsAndClampToTheVisibleFrame() throws {
@@ -168,25 +165,6 @@ import Testing
 
         let (zero, _) = try theme("listview { lines: 0; }")
         #expect(zero.fixedRows == 0)
-    }
-
-    @Test func locationsPlaceThePanelInTheVisibleFrame() {
-        let size = NSSize(width: 100, height: 50)
-        let frame = NSRect(x: 10, y: 20, width: 1000, height: 800)
-        let expected: [(RasiLocation, NSPoint?)] = [
-            (.center, nil),
-            (.north, NSPoint(x: 460, y: 770)),
-            (.northEast, NSPoint(x: 910, y: 770)),
-            (.east, NSPoint(x: 910, y: 395)),
-            (.southEast, NSPoint(x: 910, y: 20)),
-            (.south, NSPoint(x: 460, y: 20)),
-            (.southWest, NSPoint(x: 10, y: 20)),
-            (.west, NSPoint(x: 10, y: 395)),
-            (.northWest, NSPoint(x: 10, y: 770)),
-        ]
-        for (location, origin) in expected {
-            #expect(panelOrigin(location: location, size: size, visibleFrame: frame) == origin)
-        }
     }
 
     @Test func widgetColorsWithoutANativeSlotWarnAndKeepTheSharedDefault() throws {
@@ -261,5 +239,5 @@ import Testing
 private final class EmptyMode: Mode {
     let name = "e"
     let rows: [Row] = []
-    func result(_ action: MenuAction, input: inout String?, selectedRow: Int?) -> ModeResult { .exit }
+    func result(_ action: MenuAction, alt: Bool, input: inout String?, selectedRow: Int?) -> ModeResult { .exit }
 }

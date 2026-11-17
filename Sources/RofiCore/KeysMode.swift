@@ -28,7 +28,7 @@ public final class KeysMode: Mode {
 
     /// help_keys_mode_result (help-keys.c:68-76): a custom key switches to the
     /// mode with its index; anything else closes rofi without output.
-    public func result(_ action: MenuAction, input: inout String?, selectedRow: Int?) -> ModeResult {
+    public func result(_ action: MenuAction, alt: Bool, input: inout String?, selectedRow: Int?) -> ModeResult {
         if case .customKey(let index) = action { return .switchTo(index) }
         return .exit
     }

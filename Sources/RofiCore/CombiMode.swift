@@ -87,10 +87,6 @@ public final class CombiMode: Mode {
         owner(of: row).flatMap { modes[$0.mode].iconImagePath(at: $0.row) }
     }
 
-    public func result(_ action: MenuAction, input: inout String?, selectedRow: Int?) -> ModeResult {
-        result(action, alt: false, input: &input, selectedRow: selectedRow)
-    }
-
     /// combi_mode_result (combi.c:153-190).
     public func result(_ action: MenuAction, alt: Bool, input: inout String?, selectedRow: Int?) -> ModeResult {
         route(&input, selectedRow, customInput: action == .customInput) {
