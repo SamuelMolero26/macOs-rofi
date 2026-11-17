@@ -22,6 +22,12 @@ import os
     return completion
 }
 
+/// Connects to the window server ahead of the panel (~35ms), so the work
+/// that does not need AppKit can run alongside it.
+@MainActor public func prepareApplication() {
+    _ = NSApplication.shared
+}
+
 /// Runs the panel until its model closes it.
 @MainActor func runPanel(
     model: any PanelModel,

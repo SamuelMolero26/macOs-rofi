@@ -271,9 +271,23 @@ public func makeModes(
 }
 
 /// The specs with each combi's modes after it.
-private func withCombined(_ specs: [ModeSpec]) -> [ModeSpec] {
+public func withCombined(_ specs: [ModeSpec]) -> [ModeSpec] {
     specs.flatMap { spec in
         if case .combi(let modes, _, _) = spec { [spec] + modes } else { [spec] }
+    }
+}
+
+/// Starts `work` on a background queue now, so discovery overlaps the
+/// window server connection. The first call waits for that result; later
+/// calls run `work` again, as run's reload rescans $PATH (run.c:504-512).
+public func prefetched<T>(_ work: @escaping @Sendable () -> T) -> () -> T {
+    nonisolated(unsafe) var result: T?
+    let done = DispatchGroup()
+    DispatchQueue.global(qos: .userInteractive).async(group: done) { result = work() }
+    return {
+        done.wait()
+        defer { result = nil }
+        return result ?? work()
     }
 }
 

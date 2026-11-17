@@ -7,6 +7,18 @@ func makeModes(_ specs: [ModeSpec]) -> [any Mode] {
     makeModes(specs, applications: { [] }, launcher: { _ in .failure(.init(command: "test", reason: "unavailable")) })
 }
 
+@Test func prefetchedReturnsTheBackgroundResultOnceThenRunsAgain() {
+    nonisolated(unsafe) var runs = 0
+    let next = prefetched { () -> Int? in
+        runs += 1
+        return runs == 1 ? nil : runs
+    }
+    // An optional result of nil is still the prefetched one, not a rerun.
+    #expect(next() == nil)
+    #expect(next() == 2)
+    #expect(next() == 3)
+}
+
 /// Executable `/bin/sh` fixtures in a fresh temporary directory, removed when
 /// the suite instance goes away.
 private final class Fixtures {
