@@ -61,8 +61,8 @@ func reportFailedModes(_ modes: [any Mode]) -> Bool {
 /// Everything outside dmenu: startup errors, then `-show`
 /// (source/rofi.c:1243-1250, 869-958). Only dmenu sets a return code, so
 /// accepting and cancelling both exit 0 (source/rofi.c:151).
-/// ponytail: `-e` and the other remaining actions are not implemented and
-/// leave rofi unsure what to show.
+/// ponytail: the remaining actions are not implemented and leave rofi unsure
+/// what to show.
 @MainActor func runShow(_ args: Arguments, style: PanelStyle) -> Never {
     let options: ShowOptions
     do {
@@ -117,6 +117,8 @@ if ["-help", "-h", "--help"].contains(where: args.has) {
         General options:
           -help, -h, --help  Show this help and exit.
           -version, -v       Show version and exit.
+          -e <message>       Show a native error dialog and exit.
+          -markup            Render supported Pango markup in -e.
           -show <mode>       Show an enabled mode.
           -modes <list>      Set enabled modes.
           -dmenu             Read menu entries from standard input.
@@ -136,6 +138,11 @@ if ["-help", "-h", "--help"].contains(where: args.has) {
 
 if ["-version", "-v"].contains(where: args.has) {
     finishAction("Version: development\n")
+}
+
+if let message = args.string("-e") {
+    runErrorDialog(message, markup: args.has("-markup"))
+    exit(EXIT_SUCCESS)
 }
 
 let configuration: RasiConfiguration
