@@ -19,9 +19,8 @@ import Testing
         let result = try RasiResolver().resolve(source)
 
         #expect(result.color(selector: .global, property: .backgroundColor) == .init(red: 1, green: 0, blue: 0))
-        #expect(
-            result.color(selector: .global, property: .textColor)
-                == .init(red: 1.0 / 15, green: 2.0 / 15, blue: 3.0 / 15, alpha: 4.0 / 15))
+        let text = RasiColor(red: 1.0 / 15, green: 2.0 / 15, blue: 3.0 / 15, alpha: 4.0 / 15)
+        #expect(result.color(selector: .global, property: .textColor) == text)
         #expect(
             result.color(selector: .window, property: .backgroundColor)
                 == .init(red: 10.0 / 255, green: 20.0 / 255, blue: 30.0 / 255, alpha: 0.5))
