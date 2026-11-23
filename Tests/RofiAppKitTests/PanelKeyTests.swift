@@ -69,4 +69,29 @@ import Testing
         let plainOne = keyDown("1", "1", [], keyCode: 18, windowNumber: panel.windowNumber)
         #expect(keymapAction(for: plainOne, in: panel, keymap: Keymap()) == nil)
     }
+
+    // rofi has no main menu, so the panel itself maps the Edit menu's
+    // Command shortcuts onto the search field. Key codes: 0 "a", 6 "z".
+    @Test func commandShortcutsEditTheSearchField() throws {
+        let panel = DmenuPanel(contentRect: .zero, styleMask: .borderless, backing: .buffered, defer: false)
+        defer { panel.close() }
+        let field = NSTextField()
+        panel.contentView?.addSubview(field)
+        field.stringValue = "abc"
+        #expect(panel.makeFirstResponder(field))
+        let editor = try #require(field.currentEditor() as? NSTextView)
+        editor.selectedRange = NSRange(location: 3, length: 0)
+        let command = { (key: String, flags: NSEvent.ModifierFlags, code: UInt16) in
+            self.keyDown(key, key, flags, keyCode: code, windowNumber: panel.windowNumber)
+        }
+
+        #expect(panel.performKeyEquivalent(with: command("a", .command, 0)))
+        #expect(editor.selectedRange == NSRange(location: 0, length: 3))
+        editor.insertText("x", replacementRange: editor.selectedRange)
+        #expect(panel.performKeyEquivalent(with: command("z", .command, 6)))
+        #expect(editor.string == "abc")
+        #expect(panel.performKeyEquivalent(with: command("z", [.command, .shift], 6)))
+        #expect(editor.string == "x")
+        #expect(!panel.performKeyEquivalent(with: command("a", [.command, .option], 0)))
+    }
 }

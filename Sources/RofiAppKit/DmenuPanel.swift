@@ -755,9 +755,27 @@ extension PanelController: NSWindowDelegate {
     }
 }
 
-private final class DmenuPanel: NSPanel {
+final class DmenuPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    /// AppKit sends Command+X/C/V/A/Z to text fields through the Edit menu's
+    /// key equivalents, and rofi has no main menu, so the panel sends them.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        let action: Selector? =
+            switch (event.charactersIgnoringModifiers?.lowercased(), flags) {
+            case ("x", .command): #selector(NSText.cut(_:))
+            case ("c", .command): #selector(NSText.copy(_:))
+            case ("v", .command): #selector(NSText.paste(_:))
+            case ("a", .command): #selector(NSText.selectAll(_:))
+            case ("z", .command): Selector(("undo:"))
+            case ("z", [.command, .shift]): Selector(("redo:"))
+            default: nil
+            }
+        if let action, firstResponder?.tryToPerform(action, with: self) == true { return true }
+        return super.performKeyEquivalent(with: event)
+    }
 }
 
 /// The keymap action a key-down in `panel` triggers, or nil to pass the event

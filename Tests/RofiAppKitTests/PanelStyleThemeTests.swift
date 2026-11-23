@@ -39,7 +39,8 @@ import Testing
             """)
         #expect(rgba(style.backgroundColor) == [0, 1, 0, 128.0 / 255])
         #expect(rgba(style.textColor) == [0, 0, 1, 1])
-        #expect(rgba(style.borderColor) == [16.0 / 255, 32.0 / 255, 48.0 / 255, 1])
+        let border: [Double] = [16.0 / 255, 32.0 / 255, 48.0 / 255, 1]
+        #expect(rgba(style.borderColor) == border)
         #expect(style.backgroundColor?.colorSpace == .sRGB)
     }
 
